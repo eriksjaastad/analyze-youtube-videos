@@ -53,9 +53,9 @@ def test_synthesize_knowledge_timeout(mock_run):
     assert result is None
 
 @patch("os.listdir")
-@patch("scripts.config.LIBRARY_DIR", new=MagicMock())
+@patch("scripts.synthesize.LIBRARY_DIR", new=MagicMock())
 def test_aggregate_library_no_md_files(mock_listdir):
-    from scripts.config import LIBRARY_DIR
+    from scripts.synthesize import LIBRARY_DIR
     LIBRARY_DIR.exists.return_value = True
     mock_listdir.return_value = ["file.txt", "script.py"]
     assert aggregate_library() == ""

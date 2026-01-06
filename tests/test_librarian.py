@@ -87,13 +87,30 @@ def test_run_ollama_command(mock_run):
         run_ollama_command("test prompt")
 
 @patch("subprocess.run")
+@patch("os.path.exists")
+@patch("os.rmdir")
+@patch("os.remove")
+@patch("os.listdir")
+def test_get_video_data_failure_cleanup(mock_listdir, mock_remove, mock_rmdir, mock_exists, mock_run):
+    """Verify that cleanup (os.rmdir) is called even if subprocess.run fails."""
+    mock_exists.return_value = True
+    mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
+    mock_listdir.return_value = [] # No files to remove
+    
+    data = get_video_data("https://youtube.com/watch?v=fail")
+    
+    assert data is None
+    # The finally block should still execute cleanup
+    assert mock_rmdir.called
+
+@patch("subprocess.run")
 @patch("os.listdir")
 @patch("builtins.open", new_callable=MagicMock)
 @patch("os.path.exists")
 @patch("os.makedirs")
 @patch("os.remove")
 @patch("os.rmdir")
-def test_get_video_data(mock_rmdir, mock_remove, mock_makedirs, mock_exists, mock_open, mock_listdir, mock_run):
+def test_get_video_data_success(mock_rmdir, mock_remove, mock_makedirs, mock_exists, mock_open, mock_listdir, mock_run):
     mock_exists.return_value = True
     mock_run.side_effect = [
         # First call: metadata
@@ -116,7 +133,7 @@ def test_get_video_data(mock_rmdir, mock_remove, mock_makedirs, mock_exists, moc
     assert mock_rmdir.called
 
 @patch("subprocess.run")
-def test_get_video_data_metadata_failure(mock_run):
+def test_get_video_data_metadata_failure_simple(mock_run):
     mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
     data = get_video_data("https://youtube.com/watch?v=fail")
     assert data is None
