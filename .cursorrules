@@ -1,0 +1,207 @@
+# Cursor Rules: Analyze YouTube Videos
+
+> **Project:** YouTube Channel Analysis Agent  
+> **Purpose:** Autonomous agent for analyzing YouTube content using agent-skills-library
+
+---
+
+## 📝 Markdown & Documentation Standards
+
+### YAML Frontmatter (CRITICAL)
+- **ALWAYS preserve YAML frontmatter** when editing `.md` files
+- Every markdown file should have frontmatter with:
+  ```yaml
+  ---
+  tags:
+    - p/analyze-youtube-videos
+    - type/agent
+    - domain/content-analysis
+    - tech/python
+  status: #status/active
+  created: YYYY-MM-DD
+  ---
+  ```
+
+### Tag Taxonomy
+- Use **nested tags** for hierarchy: `#type/agent`, `#domain/content-analysis`
+- Tag structure:
+  - `#p/analyze-youtube-videos` - Project namespace
+  - `#type/agent` - This is an autonomous agent
+  - `#domain/content-analysis` - YouTube content analysis
+  - `#tech/python` - Technology stack
+
+### Obsidian Wikilinks
+- Use `[[analyze-youtube-videos]]` to link to this project
+
+---
+
+## 🚫 Context Window Management
+
+**NEVER waste context on:**
+- `node_modules/`, `__pycache__/`, `.git/`
+- `data/` - Large transcript files
+- `venv/` - Virtual environment
+
+**When reading files:**
+- Use targeted reads for transcripts (can be very long)
+- Prefer `codebase_search` for finding analysis code
+
+---
+
+## Project Overview
+
+This directory contains an agent that analyzes YouTube channels and generates content strategy insights.
+
+**Current phase:** Testing skills library integration  
+**Key approach:** Agent (this project) + Skills (from library)
+
+---
+
+## Skills Library Integration
+
+This project references skills from the global agent-skills-library:
+
+**Skills Library Location:** `/Users/eriksjaastad/projects/agent-skills-library/`
+
+### Primary Skill Used
+
+**YouTube Channel Analysis**
+- **Playbook:** `/agent-skills-library/playbooks/youtube-channel-analysis/README.md`
+- **Cursor adapter:** `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
+- **Version:** 1.0.0
+
+**When to use this skill:**
+- User requests channel analysis
+- User asks for content strategy insights
+- User wants to generate video ideas based on successful channels
+
+**How to use this skill:**
+Follow the adapter instructions in `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
+
+---
+
+## Project-Specific Context
+
+### This Agent's Job
+
+**What this agent does:**
+- Analyzes YouTube channels for content patterns
+- Generates personalized video recommendations
+- Extracts strategic insights from successful creators
+
+**What makes this different from the skill:**
+- **Skill** = Reusable instructions for analysis (works anywhere)
+- **Agent** = Specific job of analyzing YouTube content (uses the skill)
+
+Think of it like:
+- **Skill** = "How to analyze patterns in content" (general capability)
+- **Agent** = "YouTube content analyst" (specific role using that capability)
+
+### Current Project State
+
+**Existing assets:**
+- `data/Nick Saraev/` - Example transcript and methodology
+- `README.md` - Agent vs Skill distinction explained
+
+**Next development steps:**
+1. ✅ Extract skill to library (DONE - v1.0.0 created)
+2. 🔶 Test skill integration (IN PROGRESS - you are here)
+3. ⏳ Build agent orchestration layer
+4. ⏳ Add support for multiple channels
+5. ⏳ Create automated reporting workflow
+
+---
+
+## Project Structure
+
+```
+analyze-youtube-videos/
+├── .cursorrules               ← You are here
+├── README.md                  ← Agent description
+├── data/                      ← Downloaded channel data
+│   └── Nick Saraev/
+│       ├── transcript.en.vtt
+│       └── YouTube_Analysis_Methodology.md
+├── reports/                   ← Generated analysis reports
+│   ├── 01-descriptive-analytics.md
+│   ├── 02-pattern-recognition.md
+│   ├── 03-strategic-synthesis.md
+│   └── 04-content-roadmap.md
+└── youtube_data.db            ← SQLite database (when created)
+```
+
+---
+
+## Safety Rules
+
+🟡 **Careful with:**
+- `youtube_data.db` - Contains analysis data, don't delete
+- `reports/` - Historical analysis, version before overwriting
+
+✅ **Safe to modify:**
+- Analysis scripts
+- Documentation
+- Data collection code
+
+---
+
+## External Resources
+
+**Tools used:**
+- `yt-dlp` - YouTube metadata downloader
+- SQLite - Local database
+- Python - Analysis scripts
+
+**No API keys required** - This agent uses public YouTube data only.
+
+---
+
+## Workflow
+
+### Step 1: User Requests Analysis
+
+```
+User: "Analyze [YouTube channel]"
+```
+
+### Step 2: Activate YouTube Channel Analysis Skill
+
+Reference: `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
+
+1. Gather user context (niche, goals, etc.)
+2. Check if data is collected (yt-dlp)
+3. Create analysis plan (4-stage pipeline)
+4. Execute phases incrementally
+5. Generate personalized recommendations
+
+### Step 3: Save Outputs
+
+All reports save to `reports/` directory in this project.
+
+---
+
+## Related Documentation
+
+- **Skills Library Main README:** `/agent-skills-library/README.md`
+- **YouTube Analysis Playbook:** `/agent-skills-library/playbooks/youtube-channel-analysis/README.md`
+- **Integration Guide:** `/agent-skills-library/INTEGRATION_GUIDE.md`
+- **Project Scaffolding:** `/project-scaffolding/` (meta patterns)
+
+---
+
+## Testing Notes
+
+**This project is a test case for:**
+- Skills library integration pattern
+- Agent vs skill distinction
+- Cross-project skill reuse
+
+**If something doesn't work:**
+1. Check if issue is with skill (update playbook)
+2. Or issue is with agent (update this project)
+3. Update integration guide with learnings
+
+---
+
+*Part of Erik's project ecosystem - see project-scaffolding for patterns*
+

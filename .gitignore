@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+library/
+synthesis/
+*.db
+.DS_Store
+.cursor/
+terminals/
+
