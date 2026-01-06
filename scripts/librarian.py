@@ -3,14 +3,9 @@ import sys
 import json
 import subprocess
 import re
-import requests
+import shutil
 from datetime import datetime
-
-# --- Configuration ---
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "deepseek-r1:14b" # User can update this to a long-context model or use Cursor
-LIBRARY_DIR = "library"
-TEMP_DIR = "scripts/temp"
+from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, create_temp_dir_name, select_subtitle
 
 def clean_srt(srt_content):
     """
@@ -53,8 +48,9 @@ def get_video_data(url):
     Uses yt-dlp to fetch video metadata and SRT transcript.
     Prioritizes manual subtitles over auto-generated ones.
     """
-    if not os.path.exists(TEMP_DIR):
-        os.makedirs(TEMP_DIR)
+    unique_temp = os.path.join(TEMP_DIR, create_temp_dir_name(url))
+    if not os.path.exists(unique_temp):
+        os.makedirs(unique_temp)
         
     print(f"[*] Fetching metadata for: {url}")
     
@@ -74,7 +70,7 @@ def get_video_data(url):
     
     # 2. Get transcript (Prioritize manual SRT)
     print("[*] Fetching manual and auto-subtitles...")
-    sub_path_base = os.path.join(TEMP_DIR, "transcript")
+    sub_path_base = os.path.join(unique_temp, "transcript")
     cmd_subs = [
         "yt-dlp",
         "--skip-download",
@@ -87,31 +83,27 @@ def get_video_data(url):
     ]
     subprocess.run(cmd_subs, capture_output=True, text=True)
     
-    # Check for manual sub first, then auto
-    manual_sub = f"{sub_path_base}.en.srt"
-    auto_sub = f"{sub_path_base}.en.auto-subs.srt" # yt-dlp often uses this naming for auto-subs
-    
-    # Sometimes it might just be .en.srt regardless of manual/auto depending on yt-dlp version
-    # We check all .srt files in the temp dir
-    srt_files = [f for f in os.listdir(TEMP_DIR) if f.endswith('.srt')]
+    # Get all .srt files in the unique temp dir
+    srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
     
     transcript = ""
-    target_file = None
-    
-    # Prioritize manual if identified, otherwise take whatever is there
-    if os.path.exists(manual_sub):
-        target_file = manual_sub
-    elif srt_files:
-        target_file = os.path.join(TEMP_DIR, srt_files[0])
+    target_file = select_subtitle(srt_files, "transcript")
         
-    if target_file and os.path.exists(target_file):
-        with open(target_file, 'r', encoding='utf-8') as f:
+    if target_file:
+        target_path = os.path.join(unique_temp, target_file)
+        with open(target_path, 'r', encoding='utf-8') as f:
             srt_content = f.read()
             transcript = clean_srt(srt_content)
-        # Clean up ALL srt files in temp
-        for f in srt_files:
-            try: os.remove(os.path.join(TEMP_DIR, f))
-            except: pass
+        # Clean up ALL files in unique temp
+        for f in os.listdir(unique_temp):
+            try:
+                os.remove(os.path.join(unique_temp, f))
+            except OSError as e:
+                print(f"[!] Failed to remove temp file {f}: {e}")
+        try:
+            os.rmdir(unique_temp)
+        except OSError:
+            pass
     else:
         print("[!] No SRT transcript found.")
         
@@ -130,10 +122,9 @@ def get_video_data(url):
 
 def analyze_with_ollama(data):
     """
-    Calls local Ollama (or other router) to analyze the transcript.
-    Optimized for Gemini 3 Flash's 1M context window.
+    Calls local Ollama to analyze the transcript.
     """
-    print(f"[*] Analyzing with {MODEL} (Full Context Enabled)...")
+    print(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
     
     prompt = f"""
 You are "The Librarian," a senior AI automation engineer. Your goal is to analyze the following YouTube video transcript and extract high-density, architecturally-focused insights.
@@ -169,21 +160,13 @@ Generate a structured report in Markdown format with the following sections:
 5. **Actionable Skills/Prompts**: Specific prompt strategies or workflow steps found in the video.
 6. **Potential Skill Library Additions**: Identify specific techniques from this video that should be added to our global "agent-skills-library".
 
-Return ONLY the Markdown content for these sections.
+    Return ONLY the Markdown content for these sections.
 """
 
-    payload = {
-        "model": MODEL,
-        "prompt": prompt,
-        "stream": False
-    }
-    
     try:
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
-        return response.json().get("response", "")
+        return run_ollama_command(prompt)
     except Exception as e:
-        print(f"[!] Ollama error: {e}")
+        print(f"[!] {e}")
         return "Error during analysis. Check if Ollama is running."
 
 def save_to_library(data, analysis):
@@ -328,6 +311,10 @@ def update_index(title, channel, date, filepath):
         print(f"[*] Updated {index_file}: Added to {category}")
 
 def main():
+    # Proactive Health Check
+    if not check_environment():
+        sys.exit(1)
+
     if len(sys.argv) < 2:
         print("Usage: python scripts/librarian.py [YouTube URL]")
         sys.exit(1)

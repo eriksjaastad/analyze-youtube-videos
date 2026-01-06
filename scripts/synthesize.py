@@ -1,15 +1,9 @@
 import os
 import sys
 import argparse
-import requests
 import re
 from datetime import datetime
-
-# --- Configuration ---
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "deepseek-r1:14b"
-LIBRARY_DIR = "library"
-SYNTHESIS_DIR = "synthesis"
+from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command
 
 def aggregate_library(category=None):
     """
@@ -69,29 +63,12 @@ You are "The Strategist," a senior AI systems architect. Your goal is to synthes
 4. **Actionable Roadmap**: Create a combined workflow or architectural pattern that leverages the best ideas from all documents.
 5. **Skill Library Promotion**: Identify the top 3-5 skills that should be prioritized for the global "agent-skills-library" based on this synthesis.
 
-Generate a structured Markdown report titled: "Master Strategy: {topic_name}".
-Return ONLY the Markdown content.
-"""
-
-    payload = {
-        "model": MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.3,
-            "num_ctx": 65536, # Using 64k context for synthesis
-            "num_predict": 8192
-        }
-    }
+    Generate a structured Markdown report titled: "Master Strategy: {topic_name}".
+    Return ONLY the Markdown content.
+    """
 
     try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=300) # Long timeout for massive context
-        response.raise_for_status()
-        
-        full_response = response.json().get("response", "")
-        
-        # Strip <think> tags
-        clean_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL).strip()
+        clean_response = run_ollama_command(prompt, timeout=600) # Longer timeout for synthesis
         
         # Extract markdown if wrapped
         if "```markdown" in clean_response:
@@ -101,7 +78,7 @@ Return ONLY the Markdown content.
             
         return clean_response
     except Exception as e:
-        print(f"[!] Ollama error: {e}")
+        print(f"[!] {e}")
         return None
 
 def main():

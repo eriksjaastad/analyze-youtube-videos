@@ -4,28 +4,13 @@ import argparse
 import json
 import re
 from pathlib import Path
-
-# Add the project root to the path so we can import modules if needed
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Configuration
-GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
-OLLAMA_MODEL = "deepseek-r1:14b"
+from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data
 
 def call_ollama(prompt):
-    """Simple wrapper to call Ollama via terminal."""
-    import subprocess
+    """Standardized Ollama CLI call."""
     print(f"Calling Ollama with prompt: {prompt[:100]}...")
     try:
-        result = subprocess.run(
-            ["ollama", "run", OLLAMA_MODEL, prompt],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        # DeepSeek-R1 often includes <think> blocks, we might want to strip or keep them
-        print(f"Ollama returned {len(result.stdout)} characters.")
-        return result.stdout.strip()
+        return run_ollama_command(prompt)
     except Exception as e:
         print(f"Error calling Ollama: {str(e)}")
         return f"Error calling Ollama: {str(e)}"
@@ -172,6 +157,12 @@ def main():
     
     if not templates:
         print("❌ Failed to generate templates.")
+        return
+
+    # Strict JSON Validation Gate
+    is_valid, error_msg = validate_json_data(templates)
+    if not is_valid:
+        print(f"❌ {error_msg}")
         return
 
     # Prepare paths
