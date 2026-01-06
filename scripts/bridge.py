@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories
+from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment
 
 def call_ollama(prompt):
     """Standardized Ollama CLI call."""
@@ -12,8 +12,8 @@ def call_ollama(prompt):
     try:
         return run_ollama_command(prompt)
     except Exception as e:
-        print(f"Error calling Ollama: {str(e)}")
-        return f"Error calling Ollama: {str(e)}"
+        print(f"❌ Error calling Ollama: {str(e)}")
+        return None
 
 def extract_skill_data(source_path, skill_name):
     """Read the source file and extract context about the skill."""
@@ -24,7 +24,6 @@ def extract_skill_data(source_path, skill_name):
         content = f.read()
     
     # Try to find the skill name in the content and get surrounding context
-    # This is a bit naive but works for well-structured reports
     lines = content.split('\n')
     context = []
     found = False
@@ -61,8 +60,7 @@ def evaluate_utility(skill_name, context):
     4. RECOMMENDED_COMPLEXITY: (Low, Medium, High)
     """
     
-    evaluation = call_ollama(prompt)
-    return evaluation
+    return call_ollama(prompt)
 
 def generate_templates(skill_name, evaluation, context):
     """Use Ollama to generate the actual file contents based on the evaluation and context."""
@@ -105,8 +103,10 @@ def generate_templates(skill_name, evaluation, context):
     """
     
     response = call_ollama(prompt)
+    if response is None:
+        return None
     
-    # DeepSeek-R1 often puts the JSON after a <think> block
+    # DeepSeek-R1 often puts the JSON after a <think> block (though we strip it now)
     # We want to find the first '{' and the last '}'
     start_idx = response.find('{')
     end_idx = response.rfind('}')
@@ -125,6 +125,8 @@ def generate_templates(skill_name, evaluation, context):
 
 def parse_decision(evaluation_text):
     """Regex pattern to match DECISION: [PROMOTE] or [REJECT] at the start of a line."""
+    if evaluation_text is None:
+        return "UNKNOWN"
     # Strict regex: ^DECISION:\s*\[(PROMOTE|REJECT)\]
     decision_pattern = re.compile(r'^DECISION:\s*\[(PROMOTE|REJECT)\]', re.IGNORECASE | re.MULTILINE)
     
@@ -134,6 +136,10 @@ def parse_decision(evaluation_text):
     return "UNKNOWN"
 
 def main():
+    # Proactive Health Check
+    if not check_environment():
+        sys.exit(1)
+
     # Initialize Directories
     initialize_directories()
 
@@ -153,6 +159,10 @@ def main():
 
     print("🧠 Evaluating utility with DeepSeek-R1...")
     evaluation = evaluate_utility(args.skill, context)
+    if evaluation is None:
+        print("❌ Ollama call failed during evaluation.")
+        return
+
     print("\n--- EVALUATION ---")
     print(evaluation)
     print("------------------\n")
@@ -206,4 +216,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

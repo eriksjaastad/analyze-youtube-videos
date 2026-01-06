@@ -2,18 +2,19 @@ import os
 import json
 import subprocess
 import hashlib
-import requests
 import re
 import shutil
 from pathlib import Path
 
 # --- Configuration Centralization ---
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
 LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
 GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
 SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
+
+# Health check cache to minimize CLI latency
+_OLLAMA_HEALTH_VERIFIED = False
 
 def check_ollama_health():
     """Health check for Ollama CLI responsiveness."""
@@ -28,8 +29,12 @@ def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 30
     Standardized Ollama CLI wrapper.
     Standardizes all LLM calls to use the local Ollama CLI.
     """
-    if not check_ollama_health():
-        raise RuntimeError(f"Critical: Ollama is not running at {OLLAMA_URL}. Start it with: ollama serve")
+    global _OLLAMA_HEALTH_VERIFIED
+    
+    if not _OLLAMA_HEALTH_VERIFIED:
+        if not check_ollama_health():
+            raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
+        _OLLAMA_HEALTH_VERIFIED = True
 
     # Construct the full prompt for the CLI
     full_prompt = prompt
@@ -40,16 +45,20 @@ def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 30
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
-        return result.stdout.strip()
+        response = result.stdout.strip()
+        
+        # Strip DeepSeek-R1 internal monologue
+        return re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"Ollama command timed out after {timeout} seconds.")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
 
-def validate_json_data(data: dict) -> tuple:
+def validate_json_data(data: dict | None) -> tuple:
     """Validate JSON data contains required keys for the global library."""
     required_keys = {"SKILL_MD", "RULE_MD", "README_MD"}
-    if not isinstance(data, dict):
+    if data is None or not isinstance(data, dict):
         return False, "Validation Failed: Input is not a dictionary."
     
     if not required_keys.issubset(data.keys()):

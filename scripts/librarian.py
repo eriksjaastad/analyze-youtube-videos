@@ -12,12 +12,6 @@ def clean_srt(srt_content):
     Cleans SRT file content by removing indices, timestamps, and deduplicating lines.
     Optimized for Gemini 3 Flash long-context processing.
     """
-    # Remove timestamps and indices
-    # SRT format:
-    # 1
-    # 00:00:00,000 --> 00:00:01,000
-    # Text
-    
     lines = srt_content.splitlines()
     cleaned_lines = []
     
@@ -27,14 +21,9 @@ def clean_srt(srt_content):
     last_line = ""
     for line in lines:
         line = line.strip()
-        # Skip empty lines, indices, and timestamps
         if not line or index_pattern.match(line) or timestamp_pattern.match(line):
             continue
-        
-        # Remove HTML-like tags
         line = re.sub(r'<[^>]+>', '', line)
-        
-        # Simple deduplication
         if line != last_line:
             cleaned_lines.append(line)
             last_line = line
@@ -54,7 +43,6 @@ def get_video_data(url):
         
     print(f"[*] Fetching metadata for: {url}")
     
-    # 1. Get robust metadata
     cmd_info = [
         "yt-dlp",
         "--skip-download",
@@ -68,7 +56,6 @@ def get_video_data(url):
     
     metadata = json.loads(result.stdout)
     
-    # 2. Get transcript (Prioritize manual SRT)
     print("[*] Fetching manual and auto-subtitles...")
     sub_path_base = os.path.join(unique_temp, "transcript")
     cmd_subs = [
@@ -83,9 +70,7 @@ def get_video_data(url):
     ]
     subprocess.run(cmd_subs, capture_output=True, text=True)
     
-    # Get all .srt files in the unique temp dir
     srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
-    
     transcript = ""
     target_file = select_subtitle(srt_files, "transcript")
         
@@ -94,7 +79,6 @@ def get_video_data(url):
         with open(target_path, 'r', encoding='utf-8') as f:
             srt_content = f.read()
             transcript = clean_srt(srt_content)
-        # Clean up ALL files in unique temp
         for f in os.listdir(unique_temp):
             try:
                 os.remove(os.path.join(unique_temp, f))
@@ -112,6 +96,7 @@ def get_video_data(url):
         "channel": metadata.get("uploader"),
         "date": metadata.get("upload_date"),
         "url": url,
+        "video_id": metadata.get("id"),
         "description": metadata.get("description"),
         "transcript": transcript,
         "tags": metadata.get("tags", []),
@@ -129,14 +114,6 @@ def analyze_with_ollama(data):
     prompt = f"""
 You are "The Librarian," a senior AI automation engineer. Your goal is to analyze the following YouTube video transcript and extract high-density, architecturally-focused insights.
 
-### Methodology Reference: Strategic Synthesis
-We want to combine insights into actionable patterns. Focus on WHY things work and how they can be applied to build robust AI systems.
-
-### Analysis Goals:
-- **Architectural Patterns**: Identify the high-level system designs mentioned.
-- **Deterministic Tooling**: Detail any specific code, APIs, or deterministic processes that reduce reliance on "fuzzy" prompts.
-- **Skill Modularity**: Explain how the concepts can be broken down into reusable skills for an agentic library.
-
 ### Video Metadata
 Title: {data['title']}
 Channel: {data['channel']}
@@ -151,16 +128,7 @@ Duration: {data['duration_string']}
 ---
 
 ### Instructions
-Generate a structured report in Markdown format with the following sections:
-
-1. **Executive Summary**: A high-level overview of the video's core message.
-2. **Architectural Patterns**: Deep dive into the system designs and orchestration logic.
-3. **Deterministic Tooling & Code**: Specific mentions of code-based solutions, TypeScript/Python logic, or APIs.
-4. **Knowledge Nuggets**: Bullet points of the most valuable insights (strategic and technical).
-5. **Actionable Skills/Prompts**: Specific prompt strategies or workflow steps found in the video.
-6. **Potential Skill Library Additions**: Identify specific techniques from this video that should be added to our global "agent-skills-library".
-
-    Return ONLY the Markdown content for these sections.
+Generate a structured report in Markdown format. Return ONLY the Markdown content.
 """
 
     try:
@@ -172,9 +140,8 @@ Generate a structured report in Markdown format with the following sections:
 def save_to_library(data, analysis):
     """
     Saves the final report to the library/ directory.
+    Uses video_id to prevent filename collisions.
     """
-    # Directory creation handled by initialize_directories()
-        
     date_str = data['date']
     if len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
@@ -184,7 +151,9 @@ def save_to_library(data, analysis):
     clean_title = re.sub(r'[^\w\s-]', '', data['title']).strip()
     clean_title = re.sub(r'[-\s]+', '-', clean_title)
     
-    filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:50]}.md"
+    # Append first 8 characters of video_id to prevent collisions
+    vid_id = data.get('video_id', 'unknown')[:8]
+    filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{vid_id}.md"
     filepath = os.path.join(LIBRARY_DIR, filename)
     
     tags = ["p/analyze-youtube-videos", "type/knowledge-extraction"]
@@ -235,13 +204,9 @@ def update_queue(url, title, channel, filepath):
     new_lines = []
     found = False
     in_priority = False
-    in_analyzed = False
     
-    # Identify sections
     priority_marker = "### Priority Queue"
     analyzed_marker = "## Videos Analyzed"
-
-    # Normalize URL for matching
     clean_url = url.split('?si=')[0].split('&si=')[0]
 
     for line in lines:
@@ -251,9 +216,7 @@ def update_queue(url, title, channel, filepath):
             continue
         if analyzed_marker in line:
             in_priority = False
-            in_analyzed = True
             new_lines.append(line)
-            # Add the new entry right after the marker
             if found:
                 entry = f"- [x] **\"{title}\"** by {channel}\n"
                 entry += f"  - **Date analyzed:** {datetime.now().strftime('%Y-%m-%d')}\n"
@@ -261,12 +224,9 @@ def update_queue(url, title, channel, filepath):
                 entry += f"  - **Location:** `{filepath}`\n\n"
                 new_lines.append(entry)
             continue
-        
-        # Check for URL in priority section
         if in_priority and clean_url in line:
             found = True
-            continue # Skip adding it to priority
-            
+            continue
         new_lines.append(line)
 
     if found:
@@ -286,22 +246,16 @@ def update_index(title, channel, date, filepath):
     with open(index_file, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Determine category based on tags or simple heuristic
-    # For now, we'll try to find the right section
-    category = "## 🤖 AI & Automation" # Default
+    category = "## 🤖 AI & Automation"
     if "diet" in title.lower() or "fat" in title.lower() or "health" in title.lower():
         category = "## 🥗 Health & Diet"
     elif "business" in title.lower() or "strategy" in title.lower():
         category = "## 💡 Content Strategy & Business"
 
-    # Create the link entry
     entry = f"- [[{title}]] ({channel}) - *Analyzed {date}*\n"
-    
-    # Check if entry already exists
     if f"[[{title}]]" in content:
         return
 
-    # Insert after category marker
     if category in content:
         parts = content.split(category)
         new_content = parts[0] + category + "\n" + entry + parts[1]
@@ -322,7 +276,6 @@ def main():
         sys.exit(1)
         
     url = sys.argv[1]
-    
     data = get_video_data(url)
     if not data:
         print("[!] Failed to get video data.")
@@ -331,7 +284,6 @@ def main():
     analysis = analyze_with_ollama(data)
     filepath = save_to_library(data, analysis)
     
-    # Format date for index
     date_str = data['date']
     if len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
@@ -343,4 +295,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

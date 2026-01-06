@@ -3,14 +3,14 @@ import sys
 import argparse
 import re
 from datetime import datetime
-from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command, initialize_directories
+from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command, initialize_directories, check_environment
 
 def aggregate_library(category=None):
     """
     Reads all markdown files in the library and aggregates their content.
     If category is provided, only files in that category are included.
     """
-    if not os.path.exists(LIBRARY_DIR):
+    if not LIBRARY_DIR.exists():
         print(f"[!] Library directory not found: {LIBRARY_DIR}")
         return ""
 
@@ -82,6 +82,10 @@ You are "The Strategist," a senior AI systems architect. Your goal is to synthes
         return None
 
 def main():
+    # Proactive Health Check
+    if not check_environment():
+        sys.exit(1)
+
     # Initialize Directories
     initialize_directories()
 
@@ -127,4 +131,3 @@ created: {datetime.now().strftime("%Y-%m-%d")}
 
 if __name__ == "__main__":
     main()
-
