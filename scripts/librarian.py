@@ -40,69 +40,76 @@ def get_video_data(url):
     if not os.path.exists(unique_temp):
         os.makedirs(unique_temp)
         
-    print(f"[*] Fetching metadata for: {url}")
-    
-    cmd_info = [
-        "yt-dlp",
-        "--skip-download",
-        "--print-json",
-        url
-    ]
-    result = subprocess.run(cmd_info, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[!] Error fetching metadata: {result.stderr}")
-        return None
-    
-    metadata = json.loads(result.stdout)
-    
-    print("[*] Fetching manual and auto-subtitles...")
-    sub_path_base = os.path.join(unique_temp, "transcript")
-    cmd_subs = [
-        "yt-dlp",
-        "--skip-download",
-        "--write-subs",
-        "--write-auto-subs",
-        "--sub-lang", "en",
-        "--sub-format", "srt",
-        "--output", sub_path_base,
-        url
-    ]
-    subprocess.run(cmd_subs, capture_output=True, text=True)
-    
-    srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
-    transcript = ""
-    target_file = select_subtitle(srt_files, "transcript")
+    try:
+        print(f"[*] Fetching metadata for: {url}")
         
-    if target_file:
-        target_path = os.path.join(unique_temp, target_file)
-        with open(target_path, 'r', encoding='utf-8') as f:
-            srt_content = f.read()
-            transcript = clean_srt(srt_content)
-        for f in os.listdir(unique_temp):
+        cmd_info = [
+            "yt-dlp",
+            "--skip-download",
+            "--print-json",
+            url
+        ]
+        result = subprocess.run(cmd_info, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"[!] Error fetching metadata: {result.stderr}")
+            return None
+        
+        metadata = json.loads(result.stdout)
+        
+        print("[*] Fetching manual and auto-subtitles...")
+        sub_path_base = os.path.join(unique_temp, "transcript")
+        cmd_subs = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-lang", "en",
+            "--sub-format", "srt",
+            "--output", sub_path_base,
+            url
+        ]
+        sub_result = subprocess.run(cmd_subs, capture_output=True, text=True)
+        if sub_result.returncode != 0:
+            print(f"[!] Warning: Subtitle fetch command failed for {url}.")
+            print(f"[!] Stderr: {sub_result.stderr}")
+        
+        srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
+        transcript = ""
+        target_file = select_subtitle(srt_files, "transcript")
+            
+        if target_file:
+            target_path = os.path.join(unique_temp, target_file)
+            with open(target_path, 'r', encoding='utf-8') as f:
+                srt_content = f.read()
+                transcript = clean_srt(srt_content)
+        else:
+            print("[!] No SRT transcript found.")
+            
+        return {
+            "title": metadata.get("title") or "Untitled",
+            "channel": metadata.get("uploader") or "Unknown_Channel",
+            "date": metadata.get("upload_date"),
+            "url": url,
+            "video_id": metadata.get("id") or "unknown",
+            "description": metadata.get("description") or "",
+            "transcript": transcript,
+            "tags": metadata.get("tags", []) or [],
+            "view_count": metadata.get("view_count") or 0,
+            "like_count": metadata.get("like_count") or 0,
+            "duration_string": metadata.get("duration_string") or "0:00"
+        }
+    finally:
+        # Temp Dir Leak Fix: Always cleanup the unique temp directory
+        if os.path.exists(unique_temp):
+            for f in os.listdir(unique_temp):
+                try:
+                    os.remove(os.path.join(unique_temp, f))
+                except OSError as e:
+                    print(f"[!] Failed to remove temp file {f}: {e}")
             try:
-                os.remove(os.path.join(unique_temp, f))
+                os.rmdir(unique_temp)
             except OSError as e:
-                print(f"[!] Failed to remove temp file {f}: {e}")
-        try:
-            os.rmdir(unique_temp)
-        except OSError:
-            pass
-    else:
-        print("[!] No SRT transcript found.")
-        
-    return {
-        "title": metadata.get("title") or "Untitled",
-        "channel": metadata.get("uploader") or "Unknown_Channel",
-        "date": metadata.get("upload_date"),
-        "url": url,
-        "video_id": metadata.get("id") or "unknown",
-        "description": metadata.get("description") or "",
-        "transcript": transcript,
-        "tags": metadata.get("tags", []) or [],
-        "view_count": metadata.get("view_count") or 0,
-        "like_count": metadata.get("like_count") or 0,
-        "duration_string": metadata.get("duration_string") or "0:00"
-    }
+                print(f"[!] Warning: Failed to remove temp directory {unique_temp}: {e}")
 
 def analyze_with_ollama(data):
     """
@@ -195,6 +202,7 @@ def update_queue(url, title, channel, filepath):
     """
     queue_file = "VIDEOS_QUEUE.md"
     if not os.path.exists(queue_file):
+        print(f"[*] No queue file found at {queue_file}. Skipping queue update.")
         return
 
     with open(queue_file, 'r', encoding='utf-8') as f:
@@ -253,10 +261,11 @@ def update_index(title, channel, date, filepath):
 
     entry = f"- [[{title}]] ({channel}) - *Analyzed {date}*\n"
     if f"[[{title}]]" in content:
+        print(f"[*] Entry for \"{title}\" already exists in {index_file}. Skipping.")
         return
 
     if category in content:
-        parts = content.split(category)
+        parts = content.split(category, 1) # Fragile Index Split fix: maxsplit=1
         new_content = parts[0] + category + "\n" + entry + parts[1]
         with open(index_file, 'w', encoding='utf-8') as f:
             f.write(new_content)
@@ -275,6 +284,15 @@ def main():
         sys.exit(1)
         
     url = sys.argv[1]
+
+    # URL Guard: Regex check for valid YouTube URL
+    youtube_regex = re.compile(
+        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be)/.+$'
+    )
+    if not youtube_regex.match(url):
+        print(f"[!] Error: \"{url}\" is not a valid YouTube URL.")
+        sys.exit(1)
+
     data = get_video_data(url)
     if not data:
         print("[!] Failed to get video data.")

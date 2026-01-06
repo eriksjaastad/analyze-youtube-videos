@@ -128,6 +128,7 @@ created: {datetime.now().strftime("%Y-%m-%d")}
         print(f"[+] Master Strategy saved to: {filepath}")
     else:
         print("[!] Failed to generate synthesis report.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

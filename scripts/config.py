@@ -2,6 +2,7 @@ import os
 import subprocess
 import hashlib
 import re
+import shutil
 from pathlib import Path
 
 # --- Configuration Centralization ---
@@ -110,7 +111,6 @@ def check_environment():
     global _OLLAMA_HEALTH_VERIFIED
     
     # Check yt-dlp
-    import shutil
     if not shutil.which("yt-dlp"):
         print("[!] Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
         return False
