@@ -1,470 +1,385 @@
-# CODE REVIEW: YouTube-to-Skill Pipeline (v3)
+# CODE REVIEW: YouTube-to-Skill Pipeline (v4)
 
-**Review Date:** 2026-01-06 21:02 UTC
+**Review Date:** 2026-01-06 21:10 UTC
 **Reviewer:** Senior Principal Engineer (Systems Architecture)
-**Previous Reviews:** v1 (20:51), v2 (20:55)
-**Commit Reviewed:** 0113485
+**Previous Reviews:** v1 (20:51), v2 (20:55), v3 (21:02)
+**Commit Reviewed:** a19b338
 
 ---
 
 ## 1. The Engineering Verdict
 
-### **[Approaching Acceptable]** *(Upgraded from "Needs Major Refactor")*
+### **[Production Ready - Conditional]**
 
-Look at that. Three iterations and you've finally produced something I wouldn't be embarrassed to inherit. The hardcoded path is gone. The subtitle selection uses proper regex. The string-matching control flow is replaced with an actual parser. Import-time side effects are eliminated. Someone is actually reading these reviews.
+You did it. Four iterations and we're finally here.
 
-**But don't get comfortable.** You've introduced new defects while fixing the old ones. The `<think>` tag stripping disappeared—enjoy DeepSeek's internal monologue polluting your library files. You've got redundant health checks adding latency to every request. There's an unused `requests` import sitting there like a vestigial organ. And your error handling in `bridge.py` catches exceptions and returns error *strings* that then get fed into JSON parsing. That's not error handling, that's error laundering.
+Every critical issue from v3 is resolved. The `<think>` tags are stripped. The error handling returns `None` instead of strings. Health checks exist in all three scripts. The cache prevents redundant Ollama pings during a run. Type annotations are honest. Filename collisions are prevented with video IDs. Unused `requests` import is gone.
 
-You're close. You're not there. Let's finish this.
+**The "Conditional" caveat:** There are three remaining issues that won't crash your pipeline but will cause bad data or confusing behavior under edge conditions. I'm documenting them below with exact fixes. These are the difference between "it works" and "it works reliably."
 
----
-
-## 2. What Was Fixed (Full Acknowledgment)
-
-| Original Issue | Status | Evidence |
-|----------------|--------|----------|
-| Hardcoded `/Users/eriksjaastad/...` path | ✅ **FIXED** | `config.py:15` now uses `os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library")` |
-| All config hardcoded | ✅ **FIXED** | Lines 11-16 use env vars for OLLAMA_URL, MODEL, all directories |
-| Subtitle selection misses variants | ✅ **FIXED** | `config.py:65-97` proper regex with locale-agnostic matching |
-| String-match `[REJECT]` control flow | ✅ **FIXED** | `bridge.py:126-134` `parse_decision()` with strict regex |
-| Side effects at import time | ✅ **FIXED** | `initialize_directories()` now explicit function, called in each `main()` |
-| Dead code (duplicate `cmd` assignment) | ✅ **FIXED** | Single `cmd` assignment at line 39 |
-| Broad `except Exception` in health check | ✅ **FIXED** | `config.py:23` catches specific exceptions |
-| Scattered imports | ✅ **FIXED** | All imports at top of `config.py` (lines 1-8) |
-| UNKNOWN decision not handled | ✅ **FIXED** | `bridge.py:165-167` aborts on ambiguous evaluation |
-
-**Score: 9/9 previous issues addressed.** That's a clean sweep of the v2 backlog. Respect.
+If you fix these three, remove the "Conditional" and ship it.
 
 ---
 
-## 3. New Defects Introduced
+## 2. What Was Fixed (Complete v3 Backlog)
 
-### Critical: `<think>` Tag Stripping Removed
+| v3 Issue | Status | Evidence |
+|----------|--------|----------|
+| `<think>` tag stripping removed | ✅ **FIXED** | `config.py:50-51` - `re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)` |
+| Unused `requests` import | ✅ **FIXED** | Removed from `config.py` imports entirely |
+| Misleading error message | ✅ **FIXED** | `config.py:36` - No more `{OLLAMA_URL}` reference |
+| Error string returned in bridge.py | ✅ **FIXED** | `bridge.py:16` - Now returns `None` |
+| Missing health checks in bridge/synthesize | ✅ **FIXED** | Both scripts now call `check_environment()` before work |
+| Health check not cached | ✅ **FIXED** | `config.py:16-17, 32-37` - `_OLLAMA_HEALTH_VERIFIED` global |
+| Type annotation `data: dict` wrong | ✅ **FIXED** | `config.py:58` - Now `data: dict | None` |
+| Filename collision risk | ✅ **FIXED** | `librarian.py:99, 155-156` - Appends `video_id[:8]` to filename |
+| Inconsistent Path API | ✅ **FIXED** | `synthesize.py:13` - Now uses `LIBRARY_DIR.exists()` |
 
-**File:** `scripts/config.py:26-47`
+**Additional fixes not explicitly requested:**
+- `bridge.py:128-129`: `parse_decision()` now handles `None` input
+- `bridge.py:162-164`: Explicit check for `evaluation is None` before proceeding
+- `bridge.py:106-107`: `generate_templates()` checks for `None` response before parsing
+- `config.py:61-62`: `validate_json_data()` checks `data is None` explicitly
+- Removed `OLLAMA_URL` config variable entirely (was unused with CLI approach)
 
-**Previous version had:**
+**Score: 9/9 v3 issues + 5 bonus fixes.** Clean sweep plus extras.
+
+---
+
+## 3. Remaining Issues (The Final Three)
+
+### Issue 1: `analyze_with_ollama()` Returns Error String Instead of Failing
+
+**File:** `scripts/librarian.py:134-138`
 ```python
-response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+try:
+    return run_ollama_command(prompt)
+except Exception as e:
+    print(f"[!] {e}")
+    return "Error during analysis. Check if Ollama is running."
 ```
 
-**Current version:**
-```python
-def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
-    # ...
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
-    return result.stdout.strip()  # No think tag removal!
-```
+**What happens:**
+1. Ollama times out or crashes mid-analysis
+2. Function returns the string `"Error during analysis. Check if Ollama is running."`
+3. `save_to_library()` receives this as the `analysis` parameter
+4. This error message gets written to your library file as the "analysis"
+5. You now have a markdown file with garbage content in your permanent library
 
-**Impact:** DeepSeek-R1 outputs `<think>reasoning here</think>` before its actual response. This internal monologue now bleeds into:
-- Library markdown files
-- Synthesis reports
-- Skill templates
-
-Your analysis files will have garbage like:
-```
-<think>Let me analyze this transcript. The user wants architectural patterns...
-I should focus on the key insights... Let me structure my response...</think>
-
-## Executive Summary
+**Concrete example of corrupted output:**
+```markdown
+---
+tags:
+  - p/analyze-youtube-videos
+  - type/knowledge-extraction
 ...
-```
+---
 
-**Required Fix:** Add back the stripping:
-```python
-import re
-# After getting result:
-response = result.stdout.strip()
-response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
-return response
-```
+# [[Some Video Title]]
+
+Error during analysis. Check if Ollama is running.
 
 ---
 
-### High: Redundant Health Checks Add Latency
-
-**Flow analysis:**
-
-1. `librarian.py:main()` calls `check_environment()` (line 314)
-2. `check_environment()` calls `check_ollama_health()` (config.py:114)
-3. Later, `analyze_with_ollama()` calls `run_ollama_command()` (line 167)
-4. `run_ollama_command()` calls `check_ollama_health()` AGAIN (config.py:31)
-
-**Impact:** Every librarian run makes 2 subprocess calls to `ollama list` before any work happens. That's ~1-2 seconds of wasted time per invocation.
-
-**Required Fix:** Either:
-1. Remove the health check from `run_ollama_command()` (trust `check_environment()` already ran)
-2. Or cache the health check result for the process lifetime
-
-```python
-_ollama_health_checked = False
-
-def run_ollama_command(prompt: str, ...):
-    global _ollama_health_checked
-    if not _ollama_health_checked:
-        if not check_ollama_health():
-            raise RuntimeError(...)
-        _ollama_health_checked = True
-    # proceed with command
+## Full Transcript
+[actual transcript here]
 ```
 
----
-
-### High: Error Handling Returns Strings That Break JSON Parsing
-
-**File:** `scripts/bridge.py:9-16`
-```python
-def call_ollama(prompt):
-    """Standardized Ollama CLI call."""
-    print(f"Calling Ollama with prompt: {prompt[:100]}...")
-    try:
-        return run_ollama_command(prompt)
-    except Exception as e:
-        print(f"Error calling Ollama: {str(e)}")
-        return f"Error calling Ollama: {str(e)}"  # <-- Returns error as string
-```
-
-**What happens when this fails:**
-1. `call_ollama()` returns `"Error calling Ollama: timeout"`
-2. `generate_templates()` receives this string
-3. Line 111: `start_idx = response.find('{')` returns -1
-4. Line 114: `if start_idx != -1 and end_idx != -1:` fails
-5. Function returns `None`
-6. User sees "Failed to generate templates" with no indication it was a timeout
-
-**The Real Problem:** Error strings shouldn't be returned as valid responses. They should propagate as exceptions or return a sentinel that's explicitly handled.
+**Impact:** Silent data corruption. Your library accumulates garbage files that look valid but contain no analysis.
 
 **Required Fix:**
 ```python
-def call_ollama(prompt):
-    print(f"Calling Ollama with prompt: {prompt[:100]}...")
+def analyze_with_ollama(data):
+    """Calls local Ollama to analyze the transcript."""
+    print(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
+
+    prompt = f"""..."""
+
     try:
         return run_ollama_command(prompt)
     except Exception as e:
-        print(f"Error calling Ollama: {str(e)}")
-        return None  # Explicit failure sentinel
+        print(f"[!] {e}")
+        return None  # Return None, not error string
 ```
 
-Then in `evaluate_utility()` and `generate_templates()`:
+**Then update `main()` to handle it:**
 ```python
-response = call_ollama(prompt)
-if response is None:
-    return None
-```
-
----
-
-### Medium: Unused Import
-
-**File:** `scripts/config.py:5`
-```python
-import requests
-```
-
-**Usage in file:** None. Zero. The code uses `subprocess.run()` for all Ollama calls.
-
-**Impact:** Unnecessary dependency. If someone doesn't have `requests` installed, the import fails even though it's never used.
-
-**Required Fix:** Delete line 5.
-
----
-
-### Medium: Misleading Error Message
-
-**File:** `scripts/config.py:32`
-```python
-raise RuntimeError(f"Critical: Ollama is not running at {OLLAMA_URL}. Start it with: ollama serve")
-```
-
-**Problem:** `OLLAMA_URL` is `http://localhost:11434/api/generate` (the HTTP API endpoint), but the code uses the CLI (`ollama run`). The error message references infrastructure that isn't being used.
-
-**Required Fix:**
-```python
-raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
-```
-
-Or remove the variable reference entirely since it's not relevant to CLI mode.
-
----
-
-### Medium: Missing Health Checks in bridge.py and synthesize.py
-
-**File:** `scripts/bridge.py:136-138`
-```python
-def main():
-    # Initialize Directories
-    initialize_directories()
-    # No check_environment() call!
-```
-
-**File:** `scripts/synthesize.py:84-86`
-```python
-def main():
-    # Initialize Directories
-    initialize_directories()
-    # No check_environment() call!
-```
-
-**Contrast with:** `scripts/librarian.py:313-318`
-```python
-def main():
-    # Proactive Health Check
-    if not check_environment():
-        sys.exit(1)
-    # Initialize Directories
-    initialize_directories()
-```
-
-**Impact:** Running bridge or synthesize without Ollama produces a cryptic `RuntimeError` instead of a friendly "Ollama is not running. Start it with: ollama serve" message.
-
-**Required Fix:** Add health check to both scripts:
-```python
-from scripts.config import check_environment
-
-def main():
-    if not check_environment():
-        sys.exit(1)
-    initialize_directories()
-```
-
----
-
-### Low: Type Annotation Lies About Return Type
-
-**File:** `scripts/config.py:49`
-```python
-def validate_json_data(data: dict) -> tuple:
-```
-
-**Problem:** The function can receive `None` (from `generate_templates()` failure), which isn't a `dict`. The isinstance check handles it, but the type annotation is misleading.
-
-**Proper signature:**
-```python
-def validate_json_data(data: dict | None) -> tuple[bool, str | None]:
-```
-
-Or with older Python:
-```python
-from typing import Optional, Tuple
-def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
-```
-
----
-
-### Low: Filename Collision Risk
-
-**File:** `scripts/librarian.py:187`
-```python
-filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:50]}.md"
-```
-
-**Scenario:** Two videos from same channel, same day, titles starting with same 50 characters:
-- "How to Build Production AI Systems Part 1 - Introduction"
-- "How to Build Production AI Systems Part 2 - Advanced"
-
-Both become:
-```
-2026-01-06_Nick_Saraev_How-to-Build-Production-AI-Systems-Part.md
-```
-
-Second one overwrites first.
-
-**Mitigation:** Add video ID or timestamp:
-```python
-video_id = metadata.get("id", "")[:8]
-filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{video_id}.md"
-```
-
----
-
-### Low: Inconsistent Path API Usage
-
-**File:** `scripts/synthesize.py:13`
-```python
-if not os.path.exists(LIBRARY_DIR):
-```
-
-**But:** `LIBRARY_DIR` is a `Path` object (from config.py:13).
-
-**This works** because `os.path.exists()` accepts Path objects, but it's inconsistent with the rest of the codebase that uses pathlib directly.
-
-**Cleaner:**
-```python
-if not LIBRARY_DIR.exists():
-```
-
----
-
-## 4. Evidence-Based Critique (v3)
-
-| Issue | File:Line | Code Evidence | Severity |
-|-------|-----------|---------------|----------|
-| No `<think>` stripping | `config.py:43` | `return result.stdout.strip()` | 🔴 Critical |
-| Redundant health checks | `config.py:31` + librarian call flow | Double `check_ollama_health()` | 🟠 High |
-| Error string returned | `bridge.py:16` | `return f"Error calling Ollama: {str(e)}"` | 🟠 High |
-| Unused import | `config.py:5` | `import requests` | 🟡 Medium |
-| Misleading error msg | `config.py:32` | References `{OLLAMA_URL}` for CLI mode | 🟡 Medium |
-| Missing health check | `bridge.py:136`, `synthesize.py:84` | No `check_environment()` | 🟡 Medium |
-| Type annotation wrong | `config.py:49` | `data: dict` but can be None | 🟢 Low |
-| Filename collision | `librarian.py:187` | No video ID in filename | 🟢 Low |
-| Inconsistent Path API | `synthesize.py:13` | `os.path.exists(Path())` | 🟢 Low |
-
----
-
-## 5. Remediation Tasks (Final Sprint)
-
-### Task 1: Restore `<think>` Tag Stripping
-**File:** `scripts/config.py`
-**Location:** After line 42
-**Add:**
-```python
-result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
-response = result.stdout.strip()
-# Strip DeepSeek-R1 thinking tags
-response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
-return response
-```
-**Done when:** Output from `run_ollama_command()` contains no `<think>` tags
-
----
-
-### Task 2: Remove Unused Import
-**File:** `scripts/config.py`
-**Location:** Line 5
-**Delete:**
-```python
-import requests
-```
-**Done when:** `grep -n "import requests" scripts/config.py` returns nothing
-
----
-
-### Task 3: Fix Error Message
-**File:** `scripts/config.py`
-**Location:** Line 32
-**Current:**
-```python
-raise RuntimeError(f"Critical: Ollama is not running at {OLLAMA_URL}. Start it with: ollama serve")
-```
-**Replace with:**
-```python
-raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
-```
-**Done when:** Error message doesn't reference HTTP URL for CLI-based code
-
----
-
-### Task 4: Fix Error Return in bridge.py
-**File:** `scripts/bridge.py`
-**Location:** Lines 14-16
-**Current:**
-```python
-except Exception as e:
-    print(f"Error calling Ollama: {str(e)}")
-    return f"Error calling Ollama: {str(e)}"
-```
-**Replace with:**
-```python
-except Exception as e:
-    print(f"Error calling Ollama: {str(e)}")
-    return None
-```
-**Done when:** `call_ollama()` returns `None` on failure, not error string
-
----
-
-### Task 5: Add Health Checks to bridge.py and synthesize.py
-**File:** `scripts/bridge.py`
-**Location:** Line 7 (imports) and line 138 (main)
-**Add to imports:**
-```python
-from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment
-```
-**Add to main() before initialize_directories():**
-```python
-if not check_environment():
+analysis = analyze_with_ollama(data)
+if analysis is None:
+    print("[!] Analysis failed. No file saved.")
     sys.exit(1)
+filepath = save_to_library(data, analysis)
 ```
 
-**Repeat for:** `scripts/synthesize.py`
-**Done when:** Running `python scripts/bridge.py --help` with Ollama stopped shows health check message
+**Done when:** Ollama failure prevents file creation instead of creating corrupt files.
 
 ---
 
-### Task 6: Cache Health Check Result
-**File:** `scripts/config.py`
-**Location:** Before `run_ollama_command()` function
-**Add:**
+### Issue 2: `None` Date Crashes Filename Generation
+
+**File:** `scripts/librarian.py:145-149`
 ```python
-_ollama_health_verified = False
-
-def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
-    global _ollama_health_verified
-    if not _ollama_health_verified:
-        if not check_ollama_health():
-            raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
-        _ollama_health_verified = True
-    # ... rest of function
+date_str = data['date']
+if len(date_str) == 8:
+    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+else:
+    formatted_date = datetime.now().strftime("%Y-%m-%d")
 ```
-**Done when:** Multiple `run_ollama_command()` calls only check health once per process
+
+**What happens:**
+1. Some YouTube videos have no `upload_date` in metadata (rare but possible)
+2. `metadata.get("upload_date")` returns `None`
+3. `data['date']` is `None`
+4. `len(date_str)` throws `TypeError: object of type 'NoneType' has no len()`
+5. Script crashes mid-execution
+
+**Required Fix:**
+```python
+date_str = data.get('date') or ""
+if len(date_str) == 8:
+    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+else:
+    formatted_date = datetime.now().strftime("%Y-%m-%d")
+```
+
+Or more explicitly:
+```python
+date_str = data.get('date')
+if date_str and len(date_str) == 8:
+    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+else:
+    formatted_date = datetime.now().strftime("%Y-%m-%d")
+```
+
+**Same pattern exists in `main()` at lines 287-291.** Fix both locations.
+
+**Done when:** Videos without upload_date don't crash the script.
 
 ---
 
-## 6. Task Dependency Graph
+### Issue 3: `None` Metadata Fields Crash String Operations
 
-### Phase 1: Parallel (All Independent)
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Task 1: Restore <think> stripping                          │
-│  Task 2: Remove unused import                               │
-│  Task 3: Fix error message                                  │
-│  Task 4: Fix error return type                              │
-└─────────────────────────────────────────────────────────────┘
+**File:** `scripts/librarian.py:156`
+```python
+filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{vid_id}.md"
 ```
 
-### Phase 2: Sequential (After Task 4)
+**What happens:**
+1. Some videos have no `uploader` field (deleted channels, edge cases)
+2. `metadata.get("uploader")` returns `None`
+3. `data['channel']` is `None`
+4. `None.replace(' ', '_')` throws `AttributeError: 'NoneType' object has no attribute 'replace'`
+
+**Same risk exists for:**
+- `data['title']` → used in `clean_title` (line 151)
+- `data['channel']` → used in filename (line 156)
+- `data['duration_string']` → used in content template (line 174)
+
+**Required Fix - Defensive defaults in `get_video_data()`:**
+```python
+return {
+    "title": metadata.get("title") or "Untitled",
+    "channel": metadata.get("uploader") or "Unknown Channel",
+    "date": metadata.get("upload_date"),  # None is ok, handled in save_to_library
+    "url": url,
+    "video_id": metadata.get("id") or "unknown",
+    "description": metadata.get("description") or "",
+    "transcript": transcript,
+    "tags": metadata.get("tags") or [],
+    "view_count": metadata.get("view_count") or 0,
+    "like_count": metadata.get("like_count") or 0,
+    "duration_string": metadata.get("duration_string") or "Unknown"
+}
 ```
-Task 5: Add health checks to bridge.py and synthesize.py
-    │
-    ▼
-Task 6: Cache health check result (prevents double-check after Task 5)
-```
+
+**Done when:** Videos with missing metadata fields don't crash string operations.
 
 ---
 
-## 7. Final Assessment
+## 4. Minor Polish (Non-Blocking)
 
-**Progress:** You've addressed all 9 issues from v2 and introduced 9 new ones—but the new ones are less severe. You've traded critical architectural flaws for medium-severity bugs and cleanup items.
+These won't break anything but are worth noting:
 
-**Current state:**
-- ✅ Portable (env vars for all paths)
-- ✅ Deterministic (proper subtitle selection)
-- ✅ Fail-safe (parse_decision with UNKNOWN handling)
-- ✅ No import-time side effects
-- ❌ Output pollution (`<think>` tags)
-- ❌ Redundant work (double health checks)
-- ❌ Error laundering (strings returned as valid responses)
+### Unused Import in config.py
 
-**What blocks [Production Ready]:**
-1. `<think>` tag stripping (your library files will have garbage)
-2. Error handling pattern in bridge.py (silent failures become confusing JSON errors)
-3. Missing health checks in 2 of 3 scripts (inconsistent UX)
+**File:** `scripts/config.py:2`
+```python
+import json
+```
 
-Fix those three and you have something I'd deploy.
+**Usage:** None. The HTTP API code that used `json` is gone. This is dead weight.
+
+**Fix:** Delete line 2.
 
 ---
 
-## 8. The Verdict Trajectory
+### Unused Import in librarian.py
+
+**File:** `scripts/librarian.py:6`
+```python
+import shutil
+```
+
+**Usage:** None in this file. `shutil` is used in `config.py` for `shutil.which()`, but librarian.py imports it without using it.
+
+**Fix:** Delete line 6.
+
+---
+
+### Health Check Cache Doesn't Prevent Initial Double-Check
+
+**Current flow:**
+1. `main()` calls `check_environment()` → calls `check_ollama_health()` (check #1)
+2. `_OLLAMA_HEALTH_VERIFIED` is still `False` (check_environment doesn't set it)
+3. First `run_ollama_command()` call → checks `_OLLAMA_HEALTH_VERIFIED` → `False` → calls `check_ollama_health()` (check #2)
+4. Sets `_OLLAMA_HEALTH_VERIFIED = True`
+5. Subsequent calls skip the check ✓
+
+**Impact:** ~0.5-1s extra latency on script startup. Not critical, but wasteful.
+
+**Optimal fix:** Have `check_environment()` set the cache when Ollama check passes:
+```python
+def check_environment():
+    global _OLLAMA_HEALTH_VERIFIED
+    # ... yt-dlp check ...
+    # ... ollama CLI check ...
+
+    if not check_ollama_health():
+        print(f"[!] Critical: Ollama is not running. Start it with: ollama serve")
+        return False
+
+    _OLLAMA_HEALTH_VERIFIED = True  # Set cache here
+    return True
+```
+
+**Done when:** `check_ollama_health()` is called exactly once per script invocation.
+
+---
+
+## 5. Evidence Summary
+
+| Issue | File:Line | Severity | Status |
+|-------|-----------|----------|--------|
+| Error string saved to library | `librarian.py:138` | 🟠 High | ❌ Open |
+| None date crashes len() | `librarian.py:145` | 🟡 Medium | ❌ Open |
+| None metadata crashes .replace() | `librarian.py:156` | 🟡 Medium | ❌ Open |
+| Unused `import json` | `config.py:2` | 🟢 Low | ❌ Open |
+| Unused `import shutil` | `librarian.py:6` | 🟢 Low | ❌ Open |
+| Double health check on startup | `config.py` + all scripts | 🟢 Low | ❌ Open |
+
+---
+
+## 6. Final Remediation Tasks
+
+### Task 1: Fix Error String Return in analyze_with_ollama
+**File:** `scripts/librarian.py`
+**Location:** Lines 134-138
+**Current:**
+```python
+except Exception as e:
+    print(f"[!] {e}")
+    return "Error during analysis. Check if Ollama is running."
+```
+**Replace with:**
+```python
+except Exception as e:
+    print(f"[!] {e}")
+    return None
+```
+**Also update main() at line 284:**
+```python
+analysis = analyze_with_ollama(data)
+if analysis is None:
+    print("[!] Analysis failed. Aborting.")
+    sys.exit(1)
+filepath = save_to_library(data, analysis)
+```
+**Done when:** Ollama failure exits cleanly instead of creating garbage files.
+
+---
+
+### Task 2: Fix None Date Handling
+**File:** `scripts/librarian.py`
+**Location:** Lines 145, 287
+**Current:**
+```python
+date_str = data['date']
+if len(date_str) == 8:
+```
+**Replace with:**
+```python
+date_str = data.get('date')
+if date_str and len(date_str) == 8:
+```
+**Apply to both locations (save_to_library and main).**
+**Done when:** Video without upload_date doesn't crash.
+
+---
+
+### Task 3: Add Defensive Defaults for Metadata
+**File:** `scripts/librarian.py`
+**Location:** Lines 94-106 (return statement in get_video_data)
+**Replace entire return block with:**
+```python
+return {
+    "title": metadata.get("title") or "Untitled",
+    "channel": metadata.get("uploader") or "Unknown_Channel",
+    "date": metadata.get("upload_date"),
+    "url": url,
+    "video_id": metadata.get("id") or "unknown",
+    "description": metadata.get("description") or "",
+    "transcript": transcript,
+    "tags": metadata.get("tags") or [],
+    "view_count": metadata.get("view_count") or 0,
+    "like_count": metadata.get("like_count") or 0,
+    "duration_string": metadata.get("duration_string") or "Unknown"
+}
+```
+**Done when:** Missing metadata fields don't crash string operations.
+
+---
+
+## 7. The Verdict Trajectory (Complete)
 
 | Version | Verdict | Key Blocker |
 |---------|---------|-------------|
 | v1 | **[Dangerous Wrapper]** | Healer corrupting source code |
 | v2 | **[Needs Major Refactor]** | Hardcoded absolute path |
 | v3 | **[Approaching Acceptable]** | `<think>` tag pollution |
-| v4 | **[Production Ready]** | *Fix the three items above* |
-
-You're one iteration away. Don't fumble on the goal line.
+| v4 | **[Production Ready - Conditional]** | Error string saved to library |
+| v5 | **[Production Ready]** | *Fix the three issues above* |
 
 ---
 
-*Review complete. Almost there. Finish it.*
+## 8. Final Assessment
+
+You've come a long way. Four iterations ago, this codebase would auto-corrupt source files and fail on any machine but yours. Now it's a properly structured pipeline with:
+
+- ✅ Environment-variable-driven configuration
+- ✅ Proper health checks before work begins
+- ✅ Cached health verification to minimize latency
+- ✅ Deterministic subtitle selection with locale support
+- ✅ Structured error handling with explicit `None` returns
+- ✅ Collision-resistant filenames
+- ✅ Clean output without LLM reasoning artifacts
+
+**What remains:**
+1. Don't save error messages as analysis content
+2. Handle `None` dates gracefully
+3. Handle `None` metadata fields gracefully
+
+These are 15-minute fixes. Do them and you're done.
+
+---
+
+## 9. Certification
+
+Once the three remaining issues are fixed, this pipeline is certified for:
+- ✅ Local development use
+- ✅ Single-user production deployment
+- ✅ CI/CD integration (with env vars configured)
+- ⚠️ Multi-user deployment (needs file locking for queue/index updates - future enhancement)
+
+---
+
+*Review complete. You're on the goal line. One more push.*
