@@ -1,9 +1,7 @@
 import os
-import json
 import subprocess
 import hashlib
 import re
-import shutil
 from pathlib import Path
 
 # --- Configuration Centralization ---
@@ -109,7 +107,10 @@ def check_environment():
     """
     Proactive health check for critical dependencies.
     """
+    global _OLLAMA_HEALTH_VERIFIED
+    
     # Check yt-dlp
+    import shutil
     if not shutil.which("yt-dlp"):
         print("[!] Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
         return False
@@ -123,7 +124,8 @@ def check_environment():
     if not check_ollama_health():
         print(f"[!] Critical: Ollama is not running. Start it with: ollama serve")
         return False
-        
+    
+    _OLLAMA_HEALTH_VERIFIED = True
     return True
 
 def initialize_directories():

@@ -3,7 +3,6 @@ import sys
 import json
 import subprocess
 import re
-import shutil
 from datetime import datetime
 from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, create_temp_dir_name, select_subtitle, initialize_directories
 
@@ -92,22 +91,23 @@ def get_video_data(url):
         print("[!] No SRT transcript found.")
         
     return {
-        "title": metadata.get("title"),
-        "channel": metadata.get("uploader"),
+        "title": metadata.get("title") or "Untitled",
+        "channel": metadata.get("uploader") or "Unknown_Channel",
         "date": metadata.get("upload_date"),
         "url": url,
-        "video_id": metadata.get("id"),
-        "description": metadata.get("description"),
+        "video_id": metadata.get("id") or "unknown",
+        "description": metadata.get("description") or "",
         "transcript": transcript,
-        "tags": metadata.get("tags", []),
-        "view_count": metadata.get("view_count"),
-        "like_count": metadata.get("like_count"),
-        "duration_string": metadata.get("duration_string")
+        "tags": metadata.get("tags", []) or [],
+        "view_count": metadata.get("view_count") or 0,
+        "like_count": metadata.get("like_count") or 0,
+        "duration_string": metadata.get("duration_string") or "0:00"
     }
 
 def analyze_with_ollama(data):
     """
     Calls local Ollama to analyze the transcript.
+    Returns None on failure to prevent data corruption.
     """
     print(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
     
@@ -134,16 +134,16 @@ Generate a structured report in Markdown format. Return ONLY the Markdown conten
     try:
         return run_ollama_command(prompt)
     except Exception as e:
-        print(f"[!] {e}")
-        return "Error during analysis. Check if Ollama is running."
+        print(f"[!] Analysis failed: {e}")
+        return None
 
 def save_to_library(data, analysis):
     """
     Saves the final report to the library/ directory.
     Uses video_id to prevent filename collisions.
     """
-    date_str = data['date']
-    if len(date_str) == 8:
+    date_str = data.get('date')
+    if date_str and len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
@@ -151,13 +151,12 @@ def save_to_library(data, analysis):
     clean_title = re.sub(r'[^\w\s-]', '', data['title']).strip()
     clean_title = re.sub(r'[-\s]+', '-', clean_title)
     
-    # Append first 8 characters of video_id to prevent collisions
     vid_id = data.get('video_id', 'unknown')[:8]
     filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{vid_id}.md"
     filepath = os.path.join(LIBRARY_DIR, filename)
     
     tags = ["p/analyze-youtube-videos", "type/knowledge-extraction"]
-    if data['tags']:
+    if data.get('tags'):
         tags.extend([f"topic/{t.lower().replace(' ', '-')}" for t in data['tags'][:5]])
         
     content = f"""---
@@ -282,14 +281,17 @@ def main():
         sys.exit(1)
         
     analysis = analyze_with_ollama(data)
-    filepath = save_to_library(data, analysis)
-    
-    date_str = data['date']
-    if len(date_str) == 8:
+    if analysis is None:
+        print("[!] CRITICAL ERROR: Analysis failed. Aborting to prevent library corruption.")
+        sys.exit(1)
+        
+    date_str = data.get('date')
+    if date_str and len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
         
+    filepath = save_to_library(data, analysis)
     update_queue(url, data['title'], data['channel'], filepath)
     update_index(data['title'], data['channel'], formatted_date, filepath)
 
