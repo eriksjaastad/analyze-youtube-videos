@@ -49,8 +49,3 @@
 - **Objective:** Maintain a persistent, searchable log of project-specific "lessons learned" to prevent repeating errors.
 - **Done Definition:** A system that automatically appends a "Pattern Learned" entry to a local history file after every successful Bridge promotion.
 - **Implementation:** A hook in `bridge.py` that writes to `library/00_HISTORY.md`.
-
-## 🔄 Ongoing / Maintenance
-- [ ] **YouTube-to-Skill Pipeline:** Integrate with the `agent-skills-library`. Build an automated workflow where extracted "Actionable Skills" from transcripts are formatted into standard `.md` skill templates and proposed for the library.
-- [ ] Ingest new URLs as they appear in the queue
-- [ ] Monitor model performance on long transcripts (M4 Pro memory check)
