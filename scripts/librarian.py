@@ -5,7 +5,7 @@ import subprocess
 import re
 import shutil
 from datetime import datetime
-from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, create_temp_dir_name, select_subtitle
+from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, create_temp_dir_name, select_subtitle, initialize_directories
 
 def clean_srt(srt_content):
     """
@@ -173,8 +173,7 @@ def save_to_library(data, analysis):
     """
     Saves the final report to the library/ directory.
     """
-    if not os.path.exists(LIBRARY_DIR):
-        os.makedirs(LIBRARY_DIR)
+    # Directory creation handled by initialize_directories()
         
     date_str = data['date']
     if len(date_str) == 8:
@@ -314,6 +313,9 @@ def main():
     # Proactive Health Check
     if not check_environment():
         sys.exit(1)
+
+    # Initialize Directories
+    initialize_directories()
 
     if len(sys.argv) < 2:
         print("Usage: python scripts/librarian.py [YouTube URL]")

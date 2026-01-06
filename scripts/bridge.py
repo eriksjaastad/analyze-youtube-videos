@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data
+from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories
 
 def call_ollama(prompt):
     """Standardized Ollama CLI call."""
@@ -123,7 +123,20 @@ def generate_templates(skill_name, evaluation, context):
     print(f"❌ Could not find JSON object in response: {response[:200]}...")
     return None
 
+def parse_decision(evaluation_text):
+    """Regex pattern to match DECISION: [PROMOTE] or [REJECT] at the start of a line."""
+    # Strict regex: ^DECISION:\s*\[(PROMOTE|REJECT)\]
+    decision_pattern = re.compile(r'^DECISION:\s*\[(PROMOTE|REJECT)\]', re.IGNORECASE | re.MULTILINE)
+    
+    match = decision_pattern.search(evaluation_text)
+    if match:
+        return match.group(1).upper()
+    return "UNKNOWN"
+
 def main():
+    # Initialize Directories
+    initialize_directories()
+
     parser = argparse.ArgumentParser(description="Bridge Research to Production Skills")
     parser.add_argument("--source", required=True, help="Source report or synthesis file")
     parser.add_argument("--skill", required=True, help="Name of the skill to extract")
@@ -144,8 +157,13 @@ def main():
     print(evaluation)
     print("------------------\n")
     
-    if "[REJECT]" in evaluation and not args.dry_run:
+    decision = parse_decision(evaluation)
+    if decision == "REJECT" and not args.dry_run:
         print("🛑 Skill rejected by evaluation. Use --force to override (not implemented).")
+        return
+    
+    if decision == "UNKNOWN" and not args.dry_run:
+        print("⚠️ Could not determine decision from evaluation. Aborting for safety.")
         return
 
     if args.dry_run:

@@ -3,7 +3,7 @@ import sys
 import argparse
 import re
 from datetime import datetime
-from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command
+from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command, initialize_directories
 
 def aggregate_library(category=None):
     """
@@ -82,15 +82,15 @@ You are "The Strategist," a senior AI systems architect. Your goal is to synthes
         return None
 
 def main():
+    # Initialize Directories
+    initialize_directories()
+
     parser = argparse.ArgumentParser(description="The Strategist: Synthesize library entries into a Master Strategy.")
     parser.add_argument("--topic", default="AI Orchestration & Automation", help="The topic name for the synthesis report.")
     parser.add_argument("--category", help="Optional category filter (e.g., ai, diet).")
     parser.add_argument("--output", help="Custom output filename in the synthesis/ directory.")
     
     args = parser.parse_args()
-
-    if not os.path.exists(SYNTHESIS_DIR):
-        os.makedirs(SYNTHESIS_DIR)
 
     aggregated_text = aggregate_library(args.category)
     
