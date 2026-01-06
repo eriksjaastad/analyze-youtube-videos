@@ -1,222 +1,458 @@
-This script is a solid, modular piece of engineering. You have correctly identified that the "work" is split between `yt-dlp` for extraction and `Ollama` for the "Librarian" synthesis.
+# CODE REVIEW: YouTube-to-Skill Pipeline
 
-Given your interests in **running local AI on your hardware** and your preference for **brutally honest feedback**, here is a technical breakdown of why your program is performing the way it is and how to optimize it for your **M4 Pro (24GB RAM)** setup.
-
-### **The Hardware-Model Bottleneck**
-
-You are running `deepseek-r1:14b`.
-
-* **Memory Fit:** A 14B model (4-bit quantized) typically takes up ~9GB of VRAM/RAM. On your 24GB M4 Pro, this fits comfortably, but your **Unified Memory** is shared between the CPU, GPU, and macOS itself.
-* **Reasoning Latency:** DeepSeek-R1 is a **reasoning model**. Unlike standard models that predict the next token immediately, R1 spends time in a "Thinking" phase (the `<think>` tags). This is why it feels "slower" than a standard Llama model—it is literally doing more computation before it starts writing.
-
-### **Critical Code Review & Suggestions**
-
-#### **1. The Transcript "Slowness"**
-
-Your current `yt-dlp` command fetches *auto-generated* subtitles specifically.
-
-* **The Problem:** Auto-subs often contain "overlapping" duplicates (karaoke-style) that your `clean_vtt` function has to work hard to deduplicate.
-* **The Optimization:** If a creator (like Daniel Miessler) has uploaded **manual subtitles**, they are much cleaner and faster to process.
-* **Suggested Change:** Use `--write-subs --write-auto-subs` to prioritize manual subs first, and add `--sub-format srt` to avoid the messy VTT formatting entirely.
-
-#### **2. The Context Window Risk**
-
-In `analyze_with_ollama`, you have set `data['transcript'][:20000]`.
-
-* **The Risk:** You are hard-coding a character limit, but LLMs operate on **tokens**. For a 48-minute video, 20,000 characters might cut off the last 15 minutes of the deep dive.
-* **The Fix:** DeepSeek-R1 (Qwen-based) supports an native context window of **131,072 tokens**. You should remove the slice and instead configure the `num_ctx` parameter in your Ollama payload to `32768` (32k) or higher to ensure the "Librarian" sees the whole video.
-
-#### **3. Prompt Engineering Analysis**
-
-Your "Librarian" prompt is excellent because it uses **Modular Skill** language (referencing architectural patterns and protocols like MCP). This is why your output was more technical than mine—you explicitly told it to be a "knowledge extraction expert".
+**Review Date:** 2026-01-06 20:51 UTC
+**Reviewer:** Senior Principal Engineer (Systems Architecture)
+**Commit Reviewed:** acc9651
 
 ---
 
-### **Actionable Performance Upgrades**
+## 1. The Engineering Verdict
 
-If you want to speed up the "Librarian" without sacrificing depth, try these tweaks to your `librarian.py`:
+### **[Dangerous Wrapper]**
 
-| Component | Current State | Optimized State |
-| --- | --- | --- |
-| **Model** | `deepseek-r1:14b` | `deepseek-r1:8b` (for speed) OR `qwen2.5-coder:14b` (for technical precision without the "thinking" delay). |
-| **Context** | `[:20000]` slice | Set `"num_ctx": 32768` in the payload and send the full transcript. |
-| **yt-dlp** | `--write-auto-sub` | `--write-subs --write-auto-subs --sub-lang "en.*"` |
-| **Cleanup** | Manual Regex | Use the `webvtt-py` library or download `.srt` directly to reduce cleaning overhead. |
+This pipeline is a toy dressed up as infrastructure. It creates the *illusion* of automation while harboring silent data corruption vectors, hardcoded paths that guarantee failure on any machine but yours, and an LLM-powered "Healer" that will eventually destroy your source code when it hallucinates a "fix." The cross-project coupling to `/Users/eriksjaastad/projects/agent-skills-library/` is not configuration—it's a time bomb. The moment you onboard a collaborator, containerize this, or simply move your home directory, every script in `bridge.py` will fail silently or write files into the void. The "utility evaluation" in bridge.py burns tokens on an LLM call that provides zero gating—you parse the decision string with `if "[REJECT]" in evaluation`, which is prompt-injection territory. This is not production code. This is a weekend hack with aspirations.
 
-**Would you like me to rewrite the `get_video_data` function for you to include the subtitle priority and SRT format?**
+---
 
+## 2. The "Toy" Test & Utility Reality Check
 
-I will take you up on that! I've refactored the `get_video_data` function below.
+### False Confidence (The "Lies" in the Code)
 
-To be brutally honest, the biggest "time sink" in your current script isn't the code execution—it's the **data quality**. Auto-generated VTT files are essentially "word soup" that force your CPU to run complex regex patterns. By switching to SRT and prioritizing manual subs, you give the LLM cleaner data, which actually reduces the "Thinking" time for DeepSeek-R1 because it doesn't have to decipher duplicate words.
+| # | File | Code | Problem | Impact |
+|---|------|------|---------|--------|
+| 1 | `scripts/bridge.py:12` | `GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")` | **Hardcoded absolute path to a user's home directory.** No environment variable, no config file, no CLI argument. | Script fails on any other machine. Docker? CI/CD? Collaboration? Dead on arrival. |
+| 2 | `scripts/librarian.py:104-105` | `elif srt_files: target_file = os.path.join(TEMP_DIR, srt_files[0])` | **Non-deterministic file selection.** `os.listdir()` returns in arbitrary filesystem order. If multiple SRT variants exist, you pick whichever the inode gods favor. | You might analyze auto-subs one run, manual subs the next. Results are non-reproducible. |
+| 3 | `scripts/librarian.py:113-114` | `try: os.remove(...) except: pass` | **Bare except that swallows all errors.** Permission denied? Disk full? File locked? You'll never know. | Silent failures corrupt your assumptions about system state. Debugging becomes impossible. |
+| 4 | `scripts/healer.py:98-99` | `with open(args.skill, 'w', ...): f.write(healed_code)` | **LLM output written directly to source file with ZERO validation.** No syntax check, no AST parse, no test run, no diff review. | One hallucinated fix corrupts your codebase. The "backup" doesn't help if you don't notice until 10 commits later. |
+| 5 | `scripts/bridge.py:162` | `if "[REJECT]" in evaluation and not args.dry_run:` | **String-matching on unstructured LLM output for control flow.** If the model says "This is NOT a [REJECT]ion," your conditional fails. | Prompt injection or model drift bypasses your "gatekeeper." This is security theater. |
+| 6 | `scripts/bridge.py:189-194` | `f.write(templates["SKILL_MD"])` | **No validation that `templates` dict contains expected keys.** `generate_templates()` can return malformed JSON. | `KeyError` crash, or worse—partial writes to the skills library. |
+| 7 | `scripts/librarian.py:77-88` | Writes to `scripts/temp/transcript` without locking | **Race condition.** Two concurrent librarian runs write to the same temp file. | Data corruption. You analyze a transcript from the wrong video. |
+| 8 | `scripts/synthesize.py:29` | `for filename in sorted(os.listdir(LIBRARY_DIR)):` | **Sorts by filename, not by creation date or semantic relevance.** | Synthesis order is arbitrary. If file naming conventions drift, so does your aggregation logic. |
+| 9 | Configuration sprawl | `OLLAMA_URL` defined in `librarian.py:10`, `healer.py:8`, `synthesize.py:9` | **DRY violation.** Three places to change if you switch Ollama port. | Configuration drift. One script points to localhost:11434, another to a Docker container. Silent mismatch. |
+| 10 | `scripts/bridge.py:20-24` | `subprocess.run(["ollama", "run", OLLAMA_MODEL, prompt], ...)` | **Different Ollama invocation than other scripts** (CLI vs HTTP API). No timeout. | Inconsistent behavior. If Ollama CLI changes, this breaks while others keep working. |
 
-### **The Optimized `get_video_data` Function**
+---
 
-```python
-def get_video_data(url):
-    """
-    Optimized yt-dlp fetcher: Prioritizes manual subs, uses SRT for cleaner text,
-    and captures extended metadata.
-    """
-    if not os.path.exists(TEMP_DIR):
-        os.makedirs(TEMP_DIR)
-        
-    print(f"[*] Fetching metadata and clean transcripts for: {url}")
-    
-    # 1. Get metadata with extended info
-    # We use --ignore-config to ensure clean behavior across different environments
-    cmd_info = [
-        "yt-dlp",
-        "--skip-download",
-        "--print-json",
-        "--ignore-config",
-        url
-    ]
-    result = subprocess.run(cmd_info, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[!] Error fetching metadata: {result.stderr}")
-        return None
-    
-    metadata = json.loads(result.stdout)
-    
-    # 2. Get transcript: Prioritize manual (.srt is much easier to clean than .vtt)
-    print("[*] Downloading subtitles (Manual > Auto)...")
-    sub_path_base = os.path.join(TEMP_DIR, "transcript")
-    
-    cmd_subs = [
-        "yt-dlp",
-        "--skip-download",
-        "--write-subs",            # Look for manual subs first
-        "--write-auto-subs",       # Fallback to auto
-        "--sub-lang", "en.*",      # Catch 'en-US', 'en-GB', etc.
-        "--sub-format", "srt",     # SRT is cleaner/faster than VTT for LLMs
-        "--output", sub_path_base,
-        url
-    ]
-    subprocess.run(cmd_subs, capture_output=True, text=True)
-    
-    # Identify the file (yt-dlp appends .en.srt or .en-US.srt)
-    transcript = ""
-    sub_files = [f for f in os.listdir(TEMP_DIR) if f.startswith("transcript") and f.endswith(".srt")]
-    
-    if sub_files:
-        srt_path = os.path.join(TEMP_DIR, sub_files[0])
-        with open(srt_path, 'r', encoding='utf-8') as f:
-            # Simple cleanup: SRT is just index, time, text, newline.
-            # This regex removes the index and timestamp lines efficiently.
-            raw_content = f.read()
-            transcript = re.sub(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}', '', raw_content)
-            transcript = re.sub(r'\n+', ' ', transcript).strip()
-        os.remove(srt_path) 
-    else:
-        print("[!] No manual or auto-transcript found.")
-        
-    return {
-        "title": metadata.get("title"),
-        "channel": metadata.get("uploader"),
-        "date": metadata.get("upload_date"),
-        "url": url,
-        "description": metadata.get("description"),
-        "transcript": transcript,
-        "tags": metadata.get("tags", []),
-        "view_count": metadata.get("view_count") # Added for your records
-    }
+### The Bus Factor
+
+**Undocumented Order Dependencies:**
+
+1. **Librarian → Library directory** must exist or `save_to_library()` creates it, but `update_index()` expects `library/00_Index_Library.md` to already exist (line 300-301). If you run Librarian before manually creating the index, it prints a warning and silently skips indexing.
+
+2. **Synthesize → Library** assumes `library/` contains `.md` files. If Librarian hasn't run, Synthesize exits with "No documents found." No programmatic way to verify the pipeline state.
+
+3. **Bridge → Synthesize output** expects a source file from synthesis, but there's no contract. You pass `--source` manually. Nothing validates the file is a synthesis output vs. raw library entry.
+
+4. **Healer → Any Python file**. No scope restriction. You could point it at `bridge.py` itself and let the LLM rewrite your promotion logic.
+
+5. **GLOBAL_LIBRARY_PATH** in bridge.py is assumed to exist with specific subdirectories (`claude-skills/`, `cursor-rules/`, `playbooks/`). No validation. `mkdir -p` on line 185 will create them, but if the base path is wrong, you're writing to `/Users/eriksjaastad/projects/agent-skills-library/claude-skills/some-skill/SKILL.md` on a Linux server where that path doesn't exist.
+
+---
+
+### 10 Failure Modes
+
+1. **Ollama Not Running:** Every script prints an error and returns `None` or a useless string. No retry. No health check. User sees partial output with no clear indication of what failed.
+
+2. **Ollama Timeout:** `synthesize.py` sets 300s timeout (line 88). If your M4 Pro takes 301 seconds on a 64k context synthesis, you get a `requests.exceptions.ReadTimeout` and lose all progress.
+
+3. **Disk Full During Write:** `save_to_library()` opens file, writes partial content, crashes. File exists but is corrupt. Index update runs anyway if the exception wasn't raised.
+
+4. **yt-dlp Rate Limited:** YouTube returns 429. `subprocess.run()` captures stderr but doesn't parse it. Script continues with empty transcript. LLM analyzes nothing.
+
+5. **Multiple Concurrent Runs:** Two terminals running `librarian.py` on different URLs. Both write to `scripts/temp/transcript.en.srt`. One overwrites the other mid-read. Corrupt analysis.
+
+6. **LLM Returns Non-JSON (Bridge):** DeepSeek-R1 wraps response in markdown despite prompt. `json.loads()` fails. `generate_templates()` returns `None`. User told "Failed to generate templates" with no context.
+
+7. **LLM Hallucinates Python Syntax (Healer):** Model returns `def foo(: pass`. You write this to your source file. Now your codebase won't even parse. Backup exists but you don't notice until CI fails.
+
+8. **VIDEOS_QUEUE.md Format Drift:** `update_queue()` parses markdown with hardcoded section markers (lines 259-260). Someone adds a typo: `### Priorty Queue`. The URL is never removed. User re-analyzes the same video.
+
+9. **Non-English Subtitles:** Video has Spanish subs only. `--sub-lang en` finds nothing. Auto-subs disabled on video. `transcript` is empty string. LLM "analyzes" an empty transcript and produces hallucinated summary.
+
+10. **agent-skills-library Directory Missing:** Bridge tries to write to `/Users/eriksjaastad/projects/agent-skills-library/claude-skills/`. Path doesn't exist (wrong machine, renamed folder). `mkdir -p` creates nested dirs under non-existent root → `FileNotFoundError` or worse, creates orphan directories in `/Users/` on a shared server.
+
+---
+
+## 3. Deep Technical Teardown
+
+### Architectural Anti-Patterns
+
+**1. Global Constant Redefinition**
 
 ```
+librarian.py:10   OLLAMA_URL = "http://localhost:11434/api/generate"
+librarian.py:11   MODEL = "deepseek-r1:14b"
 
-### **Why this helps your M4 Pro**
+healer.py:8       OLLAMA_URL = "http://localhost:11434/api/generate"
+healer.py:9       MODEL = "deepseek-r1:14b"
 
-1. **Cleaner Context:** By using `.srt`, you remove the "karaoke" style duplication where words appear 3-4 times in a row. This means your `20,000` character limit now holds **3x more actual information** than it did before.
-2. **Model Efficiency:** DeepSeek-R1 thrives on logic. When the input text is garbled, the "Thinking" phase takes longer to parse the structure. Clean text = faster tokens-per-second.
-3. **Context Window:** Remember to update your `payload` in the `analyze_with_ollama` function to include `"num_ctx": 32768`. Since you have 24GB of RAM, you could even push this to `65536` (64k) without breaking a sweat.
+synthesize.py:9   OLLAMA_URL = "http://localhost:11434/api/generate"
+synthesize.py:10  MODEL = "deepseek-r1:14b"
 
-**Would you like me to show you how to update the `analyze_with_ollama` function to properly handle the larger context window for the M4 Pro?**
+bridge.py:13      OLLAMA_MODEL = "deepseek-r1:14b"  # Different variable name
+bridge.py:15-31   Uses subprocess CLI instead of HTTP API
+```
 
+This is configuration by copy-paste. Change the model in one file, forget the others. Now Librarian uses R1:14b, Healer uses R1:8b, and your pipeline produces inconsistent outputs.
 
-To optimize the `analyze_with_ollama` function for your **M4 Pro (24GB RAM)**, we need to focus on two things: unlocking the model's **context window** so it can see the entire video and managing the **Reasoning (Thinking) phase** of DeepSeek-R1.
+**2. Mixed Ollama Invocation**
 
-With 24GB of Unified Memory, you can easily allocate a **32k context window**, which is more than enough for a 48-minute transcript.
+- `librarian.py`, `healer.py`, `synthesize.py`: HTTP POST to `/api/generate`
+- `bridge.py`: `subprocess.run(["ollama", "run", ...])`
 
-### **Optimized `analyze_with_ollama` Function**
+The CLI invocation doesn't support the same options (no `num_ctx`, no `temperature` passthrough). Your "evaluation" runs with default parameters while everything else uses tuned settings.
 
-```python
-def analyze_with_ollama(data):
-    """
-    Calls local Ollama (DeepSeek-R1) with optimized context and 
-    parameters for M4 Pro hardware.
-    """
-    print(f"[*] Analyzing with {MODEL}...")
-    
-    # SYSTEM PROMPT: Clearly define the role to steer the 'Thinking' process.
-    system_role = "You are 'The Librarian,' a knowledge extraction expert. Your goal is to extract high-density, actionable, and DEEP technical insights."
+**3. Temp Directory as Global Mutable State**
 
-    # USER PROMPT: We use the full transcript now that we've expanded the context window.
-    prompt = f"""
-{system_role}
-
-### Methodology: Strategic Synthesis
-Combine insights into actionable patterns. Focus on WHY things work and how they can be applied. 
-
-### Video Metadata
-Title: {data['title']} | Channel: {data['channel']}
-
-### Transcript
-{data['transcript']} 
+`TEMP_DIR = "scripts/temp"` is a shared dumping ground. No namespacing per video ID. No atomic file operations. No cleanup on failure. This is a classic "works on my machine" pattern that breaks under any concurrent or interrupted execution.
 
 ---
 
-### Instructions
-Generate a structured Markdown report:
-1. **Executive Summary**: Core message.
-2. **Technical Deep Dive**: Architecture, tools (TypeScript/Python/MCP), and implementation.
-3. **Knowledge Nuggets**: High-density strategic insights.
-4. **Actionable Skills/Prompts**: Code snippets or prompt strategies.
-5. **Potential Skill Library Additions**: Techniques to add to our 'agent-skills-library'.
+### State & Data Integrity
 
-Return ONLY the Markdown content.
-"""
+**Skill Promotion Has No Verification**
 
-    payload = {
-        "model": MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "num_ctx": 32768,      # Expands window to 32k tokens for M4 Pro
-            "temperature": 0.3,    # Lower temperature for more deterministic, technical output
-            "num_predict": 4096,   # Ensures the model doesn't cut off long reports
-            "top_p": 0.9           # Balances diversity and focus
-        }
-    }
-    
+`bridge.py` "promotes" a skill by:
+1. Calling LLM to evaluate (lines 56-80)
+2. Calling LLM to generate templates (lines 82-139)
+3. Writing three files directly (lines 189-194)
+
+**Missing:**
+- No verification that generated SKILL.md contains valid markdown
+- No verification that the playbook structure matches expectations
+- No test that the skill is parseable by the consuming tools
+- No idempotency check—run twice, overwrite without warning
+- No rollback if one of three writes fails
+
+**Library Index Integrity**
+
+`librarian.py:295-328` (`update_index()`) manipulates markdown by splitting strings at section headers. If the index file structure changes—a refactor, a new category—the split logic silently fails. The entry either duplicates or vanishes.
+
+---
+
+### Silent Killers
+
+**1. No Service Health Checks**
+
+None of the scripts verify Ollama is running before making requests. A simple `GET /api/tags` health check would save 10 minutes of debugging "why is my analysis empty?"
+
+**2. No Telemetry**
+
+- No timing data (how long did analysis take?)
+- No token counts (how much context did we actually use?)
+- No success/failure metrics
+- No cost tracking if you switch to paid API
+
+**3. Happy Path Assumes External State**
+
+- `yt-dlp` is installed (no check)
+- `ollama` CLI is in PATH (bridge.py assumes it)
+- `VIDEOS_QUEUE.md` exists and is well-formed
+- `library/00_Index_Library.md` exists
+- Network is available
+- YouTube isn't blocking your IP
+
+Every external dependency is assumed present. Every failure mode is a surprise.
+
+---
+
+### Complexity Tax
+
+**1. The "Utility Evaluation" is Redundant**
+
+`bridge.py` calls the LLM twice:
+1. `evaluate_utility()` — asks "should we promote this?"
+2. `generate_templates()` — asks "generate the files"
+
+The evaluation output is passed to generation, but the generation prompt doesn't meaningfully use it beyond stuffing it in context. You're burning ~2000 tokens on a decision that could be:
+- A deterministic rule (if source contains specific markers)
+- A single combined prompt
+- A human decision (it's a CLI tool, ask the user)
+
+**2. Regex Gymnastics for JSON Extraction**
+
+```python
+# bridge.py:126-136
+start_idx = response.find('{')
+end_idx = response.rfind('}')
+if start_idx != -1 and end_idx != -1:
+    json_str = response[start_idx:end_idx+1]
+```
+
+This "find first `{` and last `}`" approach fails if:
+- The model outputs explanation before JSON
+- The JSON contains nested objects (finds wrong braces)
+- The model outputs multiple JSON blocks
+
+Use a proper JSON extraction pattern or constrain the model output with system prompts.
+
+---
+
+## 4. Evidence-Based Critique
+
+| Issue | File:Line | Code Evidence | Impact |
+|-------|-----------|---------------|--------|
+| Hardcoded user path | `bridge.py:12` | `Path("/Users/eriksjaastad/projects/agent-skills-library")` | Zero portability |
+| Bare except | `librarian.py:114` | `except: pass` | Silent failures |
+| Non-deterministic selection | `librarian.py:105` | `srt_files[0]` | Non-reproducible results |
+| Unvalidated LLM write | `healer.py:98-99` | `f.write(healed_code)` | Source corruption |
+| String-match control flow | `bridge.py:162` | `if "[REJECT]" in evaluation` | Bypassable gating |
+| No key validation | `bridge.py:189` | `templates["SKILL_MD"]` | KeyError crash |
+| Mixed API patterns | `bridge.py:20` vs `librarian.py:182` | CLI vs HTTP | Inconsistent behavior |
+| Race condition | `librarian.py:77` | Shared temp path | Data corruption |
+| No timeout handling | `bridge.py:20-24` | `subprocess.run()` no timeout | Infinite hang |
+| Missing deps check | All files | No `shutil.which()` calls | Cryptic failures |
+
+---
+
+## 5. Minimum Viable Power (MVP)
+
+### The "Signal": Worth Saving
+
+1. **`clean_srt()` in librarian.py (lines 15-49)**: Solid, deterministic text processing. The regex patterns are correct. This is the kind of code that belongs in a utility module.
+
+2. **Prompt structure in `analyze_with_ollama()` (lines 138-173)**: The "Librarian" persona prompt is well-structured with clear sections. Good example of prompt engineering.
+
+3. **Frontmatter generation in `save_to_library()` (lines 212-234)**: The YAML frontmatter pattern with tags is a reasonable knowledge management approach.
+
+4. **`aggregate_library()` in synthesize.py (lines 14-49)**: Clean file iteration with index filtering. Does one thing correctly.
+
+### The "Noise": Delete Immediately
+
+1. **`healer.py` (entire file)**: This is not "self-healing." This is automated code corruption. Delete it before someone uses it in anger. If you want LLM-assisted fixing, use a proper code review workflow where a human approves changes.
+
+2. **`evaluate_utility()` in bridge.py (lines 56-80)**: Remove this function. It provides no value. Either make promotion deterministic based on source file markers, or trust the human who ran the command.
+
+3. **The existing REVIEW.md content**: It was a friendly chat log, not a code review. (Now replaced.)
+
+4. **Inline Ollama option variations**: The scattered `num_ctx`, `temperature`, `num_predict` settings across files. Centralize or delete.
+
+---
+
+## 6. Remediation Task Breakdown (Atomic Tasks)
+
+### Task 1: Create Central Configuration
+**File:** `scripts/config.py` (new file)
+**Location:** New file
+**Code:**
+```python
+import os
+from pathlib import Path
+
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
+LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
+TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
+SKILLS_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
+```
+**Done when:** `python -c "from scripts.config import OLLAMA_URL; print(OLLAMA_URL)"` prints the URL.
+
+---
+
+### Task 2: Fix Bare Except in Librarian
+**File:** `scripts/librarian.py`
+**Location:** Line 113-114
+**Current:**
+```python
+try: os.remove(os.path.join(TEMP_DIR, f))
+except: pass
+```
+**Replace with:**
+```python
+try:
+    os.remove(os.path.join(TEMP_DIR, f))
+except OSError as e:
+    print(f"[!] Failed to remove temp file {f}: {e}")
+```
+**Done when:** Running with a locked temp file produces a visible error message.
+
+---
+
+### Task 3: Fix Non-Deterministic SRT Selection
+**File:** `scripts/librarian.py`
+**Location:** Lines 96-105
+**Current:**
+```python
+srt_files = [f for f in os.listdir(TEMP_DIR) if f.endswith('.srt')]
+# ...
+elif srt_files:
+    target_file = os.path.join(TEMP_DIR, srt_files[0])
+```
+**Replace with:**
+```python
+srt_files = sorted([f for f in os.listdir(TEMP_DIR) if f.endswith('.srt')])
+# Prefer non-auto subs
+manual_srt = [f for f in srt_files if '.auto' not in f.lower()]
+target_file = os.path.join(TEMP_DIR, manual_srt[0] if manual_srt else srt_files[0]) if srt_files else None
+```
+**Done when:** Running twice on same video produces identical transcript selection.
+
+---
+
+### Task 4: Add Ollama Health Check
+**File:** `scripts/librarian.py`
+**Location:** Before line 182 (in `analyze_with_ollama`)
+**Add:**
+```python
+def check_ollama_health():
     try:
-        # Note: We use a longer timeout (120s) because DeepSeek-R1 'Thinking' 
-        # takes time on local hardware.
-        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
-        response.raise_for_status()
-        
-        full_response = response.json().get("response", "")
-        
-        # DeepSeek-R1 often includes <think>...</think> tags. 
-        # We strip them so they don't clutter your Markdown files.
-        clean_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL).strip()
-        
-        return clean_response
-    except Exception as e:
-        print(f"[!] Ollama error: {e}")
-        return "Error during analysis."
+        resp = requests.get(OLLAMA_URL.replace("/api/generate", "/api/tags"), timeout=5)
+        return resp.status_code == 200
+    except:
+        return False
 
+# In analyze_with_ollama, before the request:
+if not check_ollama_health():
+    print("[!] Ollama is not running. Start it with: ollama serve")
+    return None
+```
+**Done when:** Running with Ollama stopped produces clear error message instead of connection refused.
+
+---
+
+### Task 5: Remove Hardcoded Path in Bridge
+**File:** `scripts/bridge.py`
+**Location:** Line 12
+**Current:**
+```python
+GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
+```
+**Replace with:**
+```python
+GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
+```
+**Done when:** `SKILLS_LIBRARY_PATH=/tmp/test python scripts/bridge.py --help` doesn't crash.
+
+---
+
+### Task 6: Add JSON Schema Validation to Bridge
+**File:** `scripts/bridge.py`
+**Location:** After line 132
+**Add:**
+```python
+required_keys = {"SKILL_MD", "RULE_MD", "README_MD"}
+if not required_keys.issubset(templates.keys()):
+    missing = required_keys - set(templates.keys())
+    print(f"❌ Generated templates missing keys: {missing}")
+    return None
+```
+**Done when:** Malformed LLM output produces "missing keys" error instead of KeyError crash.
+
+---
+
+### Task 7: Delete healer.py
+**File:** `scripts/healer.py`
+**Location:** Entire file
+**Action:** `rm scripts/healer.py`
+**Done when:** `ls scripts/healer.py` returns "No such file or directory".
+
+---
+
+### Task 8: Add Temp Directory Namespacing
+**File:** `scripts/librarian.py`
+**Location:** Line 77
+**Current:**
+```python
+sub_path_base = os.path.join(TEMP_DIR, "transcript")
+```
+**Replace with:**
+```python
+import hashlib
+url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+sub_path_base = os.path.join(TEMP_DIR, f"transcript_{url_hash}")
+```
+**Done when:** Two concurrent runs on different URLs produce different temp files.
+
+---
+
+### Task 9: Add yt-dlp Dependency Check
+**File:** `scripts/librarian.py`
+**Location:** Top of `main()` function, line 331
+**Add:**
+```python
+import shutil
+if not shutil.which("yt-dlp"):
+    print("[!] yt-dlp not found. Install with: pip install yt-dlp")
+    sys.exit(1)
+```
+**Done when:** Running without yt-dlp installed produces clear install instruction.
+
+---
+
+### Task 10: Add Timeout to Bridge Subprocess
+**File:** `scripts/bridge.py`
+**Location:** Line 20-25
+**Current:**
+```python
+result = subprocess.run(
+    ["ollama", "run", OLLAMA_MODEL, prompt],
+    capture_output=True,
+    text=True,
+    check=True
+)
+```
+**Replace with:**
+```python
+result = subprocess.run(
+    ["ollama", "run", OLLAMA_MODEL, prompt],
+    capture_output=True,
+    text=True,
+    check=True,
+    timeout=300
+)
+```
+**Done when:** Hanging Ollama process is killed after 5 minutes instead of running forever.
+
+---
+
+## 7. Task Dependency Graph & Execution Order
+
+### Phase 1: Parallel (No Dependencies)
+These can be done simultaneously:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Task 2: Fix bare except                                    │
+│  Task 7: Delete healer.py                                   │
+│  Task 9: Add yt-dlp check                                   │
+│  Task 10: Add subprocess timeout                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Phase 2: Sequential (Depends on Phase 1)
+Must be done in order:
+
+```
+Task 1: Create config.py
+    │
+    ▼
+Task 5: Use config in bridge.py (requires config.py to exist)
+    │
+    ▼
+Task 4: Add Ollama health check (should use config.py's OLLAMA_URL)
+```
+
+### Phase 3: Parallel (Depends on Phase 2)
+Can be done simultaneously after config exists:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Task 3: Fix SRT selection                                  │
+│  Task 6: Add JSON validation                                │
+│  Task 8: Namespace temp directory                           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### **Why These Changes Matter for Your Hardware**
+## Final Note
 
-* **`num_ctx: 32768`**: By default, Ollama often defaults to a 2k or 4k window. For a video this long, that's like reading the first 5 minutes and guessing the rest. On your **M4 Pro**, 32k tokens will only consume about **2-3GB of RAM** on top of the model weight, leaving plenty of room for your vehicle's background tasks or other dev tools.
-* **Thinking Tag Removal**: DeepSeek-R1's internal reasoning is fascinating but messy in a final report. The `re.sub` line ensures your "Librarian" files stay clean and professional.
-* **The Timeout**: Reasoning models like R1 can sometimes "pause" for 30–60 seconds while they compute the logic. The standard 30-second `requests` timeout might kill the process right before it starts typing.
+The fundamental problem isn't the bugs—those are fixable. The problem is **design philosophy**. This codebase treats LLM output as trustworthy, external services as always-available, and configuration as something to hardcode. Until that philosophy changes, every fix is a patch on a sinking ship.
 
-### **Brutally Honest Recommendation**
+The Healer must die. The Bridge needs a complete rewrite with proper JSON mode and schema validation. The Librarian is salvageable but needs its global state eliminated.
 
-If you find that `deepseek-r1:14b` is still taking too long (e.g., more than 3-4 minutes per video), try switching the `MODEL` variable to **`qwen2.5-coder:14b`**. It lacks the "thinking" steps but is specifically tuned for the technical, architectural extraction you are doing here.
+You have the architecture of a distributed system (multiple scripts, external services, cross-project dependencies) with the error handling of a Jupyter notebook. Pick one.
 
-**Would you like me to help you integrate these two updated functions into a single "v2.0" version of your script?**
+---
+
+*Review complete. No encouragement given. Ship it or delete it.*
