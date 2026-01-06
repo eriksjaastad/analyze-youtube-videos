@@ -1,388 +1,470 @@
-# CODE REVIEW: YouTube-to-Skill Pipeline (v2)
+# CODE REVIEW: YouTube-to-Skill Pipeline (v3)
 
-**Review Date:** 2026-01-06 20:55 UTC
+**Review Date:** 2026-01-06 21:02 UTC
 **Reviewer:** Senior Principal Engineer (Systems Architecture)
-**Previous Review:** 2026-01-06 20:51 UTC
-**Commit Reviewed:** cedb58f
+**Previous Reviews:** v1 (20:51), v2 (20:55)
+**Commit Reviewed:** 0113485
 
 ---
 
 ## 1. The Engineering Verdict
 
-### **[Needs Major Refactor]** *(Upgraded from "Dangerous Wrapper")*
+### **[Approaching Acceptable]** *(Upgraded from "Needs Major Refactor")*
 
-Credit where due: someone actually read the last review. The Healer is dead. There's a central config. Health checks exist. Temp directories are namespaced. This is no longer a ticking time bomb—it's now merely a minefield with some flags planted.
+Look at that. Three iterations and you've finally produced something I wouldn't be embarrassed to inherit. The hardcoded path is gone. The subtitle selection uses proper regex. The string-matching control flow is replaced with an actual parser. Import-time side effects are eliminated. Someone is actually reading these reviews.
 
-**But the #1 issue from the last review is still unfixed.** The hardcoded absolute path `/Users/eriksjaastad/projects/agent-skills-library` moved from `bridge.py` to `config.py`, where it's now a *centralized* landmine instead of a *scattered* one. Same explosion radius, different file. The subtitle selection logic will miss any non-standard language codes. And the `[REJECT]` string-matching control flow remains bypassable.
+**But don't get comfortable.** You've introduced new defects while fixing the old ones. The `<think>` tag stripping disappeared—enjoy DeepSeek's internal monologue polluting your library files. You've got redundant health checks adding latency to every request. There's an unused `requests` import sitting there like a vestigial organ. And your error handling in `bridge.py` catches exceptions and returns error *strings* that then get fed into JSON parsing. That's not error handling, that's error laundering.
 
-You've gone from "will definitely break" to "will probably break under specific conditions." Progress. Not victory.
+You're close. You're not there. Let's finish this.
 
 ---
 
-## 2. What Was Fixed (Acknowledgment)
+## 2. What Was Fixed (Full Acknowledgment)
 
 | Original Issue | Status | Evidence |
 |----------------|--------|----------|
-| healer.py (code corruption) | ✅ **FIXED** | File deleted |
-| Configuration sprawl | ✅ **FIXED** | `scripts/config.py` centralizes constants |
-| Bare `except: pass` | ✅ **FIXED** | `librarian.py:101-102` now catches `OSError` with message |
-| No health checks | ✅ **FIXED** | `config.py:76-99` checks yt-dlp, ollama CLI, service responsiveness |
-| Race condition in temp dir | ✅ **FIXED** | `config.py:51-54` uses SHA256 hash of URL for unique temp dirs |
-| No subprocess timeout | ✅ **FIXED** | `config.py:35` adds timeout parameter (default 300s) |
-| No JSON validation in bridge | ✅ **FIXED** | `config.py:67-74` validates required keys before write |
-| Mixed Ollama invocation | ✅ **FIXED** | All scripts now use `run_ollama_command()` wrapper |
+| Hardcoded `/Users/eriksjaastad/...` path | ✅ **FIXED** | `config.py:15` now uses `os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library")` |
+| All config hardcoded | ✅ **FIXED** | Lines 11-16 use env vars for OLLAMA_URL, MODEL, all directories |
+| Subtitle selection misses variants | ✅ **FIXED** | `config.py:65-97` proper regex with locale-agnostic matching |
+| String-match `[REJECT]` control flow | ✅ **FIXED** | `bridge.py:126-134` `parse_decision()` with strict regex |
+| Side effects at import time | ✅ **FIXED** | `initialize_directories()` now explicit function, called in each `main()` |
+| Dead code (duplicate `cmd` assignment) | ✅ **FIXED** | Single `cmd` assignment at line 39 |
+| Broad `except Exception` in health check | ✅ **FIXED** | `config.py:23` catches specific exceptions |
+| Scattered imports | ✅ **FIXED** | All imports at top of `config.py` (lines 1-8) |
+| UNKNOWN decision not handled | ✅ **FIXED** | `bridge.py:165-167` aborts on ambiguous evaluation |
 
-**Net improvement: 8 of 10 critical issues addressed.** That's a solid remediation pass.
-
----
-
-## 3. What's Still Broken
-
-### Critical: Hardcoded Absolute Path (UNFIXED)
-
-**File:** `scripts/config.py:12`
-```python
-GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
-```
-
-**Problem:** This was Issue #1 in the last review. It's still here. Just moved files.
-
-**Impact:** Bridge.py writes to this path. On any machine where this path doesn't exist:
-- Linux server: Creates `/Users/eriksjaastad/projects/...` directory structure (if permissions allow)
-- Docker container: Same orphan directory creation
-- Collaborator's Mac: Writes to Erik's directory if it exists, fails silently if not
-
-**Required Fix:**
-```python
-GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
-```
+**Score: 9/9 previous issues addressed.** That's a clean sweep of the v2 backlog. Respect.
 
 ---
 
-### High: Subtitle Selection Misses Variants
+## 3. New Defects Introduced
 
-**File:** `scripts/config.py:56-65`
+### Critical: `<think>` Tag Stripping Removed
+
+**File:** `scripts/config.py:26-47`
+
+**Previous version had:**
 ```python
-def select_subtitle(filenames: list, base_name: str) -> str:
-    manual_subtitle = f"{base_name}.en.srt"
-    auto_subtitle = f"{base_name}.en.auto-subs.srt"
-
-    if manual_subtitle in filenames:
-        return manual_subtitle
-    elif auto_subtitle in filenames:
-        return auto_subtitle
-    return None
+response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
 ```
 
-**Problem:** yt-dlp generates variant filenames:
-- `transcript.en-US.srt`
-- `transcript.en-GB.srt`
-- `transcript.en.vtt` (wrong format, but could exist)
-
-This function only matches exact strings. If YouTube serves `en-US` subtitles, this returns `None` and the transcript is empty.
-
-**Required Fix:**
-```python
-def select_subtitle(filenames: list, base_name: str) -> str:
-    # Sort for determinism, prefer manual over auto
-    srt_files = sorted([f for f in filenames if f.endswith('.srt')])
-    manual = [f for f in srt_files if base_name in f and 'auto' not in f.lower()]
-    auto = [f for f in srt_files if base_name in f and 'auto' in f.lower()]
-
-    if manual:
-        return manual[0]
-    elif auto:
-        return auto[0]
-    elif srt_files:
-        return srt_files[0]  # Fallback to any SRT
-    return None
-```
-
----
-
-### Medium: String-Match Control Flow Still Bypassable
-
-**File:** `scripts/bridge.py:147`
-```python
-if "[REJECT]" in evaluation and not args.dry_run:
-```
-
-**Problem:** LLM can output "I'm not going to [REJECT] this" and bypass the gate.
-
-**Mitigation (not fix):** This is fundamentally unfixable without structured output. Either:
-1. Remove the gate entirely (trust the human who ran the command)
-2. Use Ollama's JSON mode with a schema
-3. Parse the evaluation with a regex that requires `DECISION: [REJECT]` format
-
----
-
-### Medium: Side Effects at Import Time
-
-**File:** `scripts/config.py:101-103`
-```python
-# Initialize directories
-for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-    os.makedirs(d, exist_ok=True)
-```
-
-**Problem:** This runs when `config.py` is imported, not when scripts execute. If you write a unit test that imports config, you create directories. If you import from a read-only filesystem, you crash.
-
-**Required Fix:** Move to a function called explicitly by each script's `main()`:
-```python
-def initialize_directories():
-    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-        os.makedirs(d, exist_ok=True)
-```
-
----
-
-### Low: Inconsistent Import Placement
-
-**File:** `scripts/config.py`
-```python
-# Line 1-4: imports at top
-import os
-import json
-import subprocess
-from pathlib import Path
-
-# Line 38: import inside function
-import re
-
-# Line 49: import in middle of file (not inside function)
-import hashlib
-
-# Line 80: import inside function
-import shutil
-```
-
-**Problem:** Scattered imports make dependencies unclear. `hashlib` is imported at module level between function definitions. `re` and `shutil` are imported inside functions (acceptable for optional deps, confusing here since they're always used).
-
-**Required Fix:** Move all imports to top of file.
-
----
-
-### Low: Orphan Directory Cleanup Missing
-
-**File:** `scripts/librarian.py:103-106`
-```python
-try:
-    os.rmdir(unique_temp)
-except OSError:
-    pass
-```
-
-**Problem:** If temp cleanup fails (non-empty dir), the unique temp directory stays forever. No logging.
-
-**Improvement:**
-```python
-except OSError as e:
-    print(f"[!] Could not remove temp directory {unique_temp}: {e}")
-```
-
----
-
-## 4. New Issues Introduced
-
-### Issue: Health Check Catches Too Broadly
-
-**File:** `scripts/config.py:93-97`
-```python
-try:
-    subprocess.run(["ollama", "list"], capture_output=True, check=True, timeout=10)
-except Exception:
-    print("[!] Critical: Ollama CLI not responsive. Is the service running?")
-    return False
-```
-
-**Problem:** `except Exception` catches everything including `KeyboardInterrupt`. If user hits Ctrl+C during health check, they get "Ollama CLI not responsive" instead of a clean exit.
-
-**Required Fix:**
-```python
-except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-    print(f"[!] Critical: Ollama CLI not responsive: {e}")
-    return False
-```
-
----
-
-### Issue: Duplicate cmd Assignment
-
-**File:** `scripts/config.py:19-27`
+**Current version:**
 ```python
 def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
-    cmd = ["ollama", "run", OLLAMA_MODEL, prompt]  # Line 19: First assignment
-
     # ...
-    full_prompt = prompt
-    if system_prompt:
-        full_prompt = f"System: {system_prompt}\n\nUser: {prompt}"
-
-    cmd = ["ollama", "run", OLLAMA_MODEL, full_prompt]  # Line 27: Overwrites line 19
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
+    return result.stdout.strip()  # No think tag removal!
 ```
 
-**Problem:** `cmd` is assigned twice. Line 19 is dead code.
+**Impact:** DeepSeek-R1 outputs `<think>reasoning here</think>` before its actual response. This internal monologue now bleeds into:
+- Library markdown files
+- Synthesis reports
+- Skill templates
 
-**Required Fix:** Remove line 19.
+Your analysis files will have garbage like:
+```
+<think>Let me analyze this transcript. The user wants architectural patterns...
+I should focus on the key insights... Let me structure my response...</think>
 
----
+## Executive Summary
+...
+```
 
-## 5. Evidence-Based Critique (Updated)
-
-| Issue | File:Line | Code Evidence | Status |
-|-------|-----------|---------------|--------|
-| Hardcoded user path | `config.py:12` | `Path("/Users/eriksjaastad/projects/agent-skills-library")` | ❌ UNFIXED |
-| Subtitle selection misses variants | `config.py:56-65` | Only matches exact `.en.srt` or `.en.auto-subs.srt` | ❌ UNFIXED |
-| String-match control flow | `bridge.py:147` | `if "[REJECT]" in evaluation` | ❌ UNFIXED |
-| Side effects at import | `config.py:101-103` | `os.makedirs()` at module level | 🆕 NEW |
-| Broad exception catch | `config.py:95` | `except Exception:` | 🆕 NEW |
-| Dead code | `config.py:19` | First `cmd =` assignment overwritten | 🆕 NEW |
-| Inconsistent imports | `config.py:38,49,80` | `import re/hashlib/shutil` scattered | 🆕 NEW |
-
----
-
-## 6. Remediation Tasks (Remaining)
-
-### Task 1: Environment Variable for Skills Library Path
-**File:** `scripts/config.py`
-**Location:** Line 12
-**Current:**
+**Required Fix:** Add back the stripping:
 ```python
-GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
+import re
+# After getting result:
+response = result.stdout.strip()
+response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+return response
 ```
-**Replace with:**
-```python
-GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
-```
-**Done when:** `SKILLS_LIBRARY_PATH=/tmp/test python -c "from scripts.config import GLOBAL_LIBRARY_PATH; print(GLOBAL_LIBRARY_PATH)"` prints `/tmp/test`
 
 ---
 
-### Task 2: Fix Subtitle Selection for Variants
-**File:** `scripts/config.py`
-**Location:** Lines 56-65
-**Replace entire function with:**
-```python
-def select_subtitle(filenames: list, base_name: str) -> str:
-    """Select subtitle file, handling locale variants like en-US, en-GB."""
-    srt_files = sorted([f for f in filenames if f.endswith('.srt') and base_name in f])
-    manual = [f for f in srt_files if 'auto' not in f.lower()]
-    auto = [f for f in srt_files if 'auto' in f.lower()]
+### High: Redundant Health Checks Add Latency
 
-    return manual[0] if manual else (auto[0] if auto else None)
+**Flow analysis:**
+
+1. `librarian.py:main()` calls `check_environment()` (line 314)
+2. `check_environment()` calls `check_ollama_health()` (config.py:114)
+3. Later, `analyze_with_ollama()` calls `run_ollama_command()` (line 167)
+4. `run_ollama_command()` calls `check_ollama_health()` AGAIN (config.py:31)
+
+**Impact:** Every librarian run makes 2 subprocess calls to `ollama list` before any work happens. That's ~1-2 seconds of wasted time per invocation.
+
+**Required Fix:** Either:
+1. Remove the health check from `run_ollama_command()` (trust `check_environment()` already ran)
+2. Or cache the health check result for the process lifetime
+
+```python
+_ollama_health_checked = False
+
+def run_ollama_command(prompt: str, ...):
+    global _ollama_health_checked
+    if not _ollama_health_checked:
+        if not check_ollama_health():
+            raise RuntimeError(...)
+        _ollama_health_checked = True
+    # proceed with command
 ```
-**Done when:** Function returns correct file for `["transcript.en-US.srt"]` input
 
 ---
 
-### Task 3: Remove Dead Code
+### High: Error Handling Returns Strings That Break JSON Parsing
+
+**File:** `scripts/bridge.py:9-16`
+```python
+def call_ollama(prompt):
+    """Standardized Ollama CLI call."""
+    print(f"Calling Ollama with prompt: {prompt[:100]}...")
+    try:
+        return run_ollama_command(prompt)
+    except Exception as e:
+        print(f"Error calling Ollama: {str(e)}")
+        return f"Error calling Ollama: {str(e)}"  # <-- Returns error as string
+```
+
+**What happens when this fails:**
+1. `call_ollama()` returns `"Error calling Ollama: timeout"`
+2. `generate_templates()` receives this string
+3. Line 111: `start_idx = response.find('{')` returns -1
+4. Line 114: `if start_idx != -1 and end_idx != -1:` fails
+5. Function returns `None`
+6. User sees "Failed to generate templates" with no indication it was a timeout
+
+**The Real Problem:** Error strings shouldn't be returned as valid responses. They should propagate as exceptions or return a sentinel that's explicitly handled.
+
+**Required Fix:**
+```python
+def call_ollama(prompt):
+    print(f"Calling Ollama with prompt: {prompt[:100]}...")
+    try:
+        return run_ollama_command(prompt)
+    except Exception as e:
+        print(f"Error calling Ollama: {str(e)}")
+        return None  # Explicit failure sentinel
+```
+
+Then in `evaluate_utility()` and `generate_templates()`:
+```python
+response = call_ollama(prompt)
+if response is None:
+    return None
+```
+
+---
+
+### Medium: Unused Import
+
+**File:** `scripts/config.py:5`
+```python
+import requests
+```
+
+**Usage in file:** None. Zero. The code uses `subprocess.run()` for all Ollama calls.
+
+**Impact:** Unnecessary dependency. If someone doesn't have `requests` installed, the import fails even though it's never used.
+
+**Required Fix:** Delete line 5.
+
+---
+
+### Medium: Misleading Error Message
+
+**File:** `scripts/config.py:32`
+```python
+raise RuntimeError(f"Critical: Ollama is not running at {OLLAMA_URL}. Start it with: ollama serve")
+```
+
+**Problem:** `OLLAMA_URL` is `http://localhost:11434/api/generate` (the HTTP API endpoint), but the code uses the CLI (`ollama run`). The error message references infrastructure that isn't being used.
+
+**Required Fix:**
+```python
+raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
+```
+
+Or remove the variable reference entirely since it's not relevant to CLI mode.
+
+---
+
+### Medium: Missing Health Checks in bridge.py and synthesize.py
+
+**File:** `scripts/bridge.py:136-138`
+```python
+def main():
+    # Initialize Directories
+    initialize_directories()
+    # No check_environment() call!
+```
+
+**File:** `scripts/synthesize.py:84-86`
+```python
+def main():
+    # Initialize Directories
+    initialize_directories()
+    # No check_environment() call!
+```
+
+**Contrast with:** `scripts/librarian.py:313-318`
+```python
+def main():
+    # Proactive Health Check
+    if not check_environment():
+        sys.exit(1)
+    # Initialize Directories
+    initialize_directories()
+```
+
+**Impact:** Running bridge or synthesize without Ollama produces a cryptic `RuntimeError` instead of a friendly "Ollama is not running. Start it with: ollama serve" message.
+
+**Required Fix:** Add health check to both scripts:
+```python
+from scripts.config import check_environment
+
+def main():
+    if not check_environment():
+        sys.exit(1)
+    initialize_directories()
+```
+
+---
+
+### Low: Type Annotation Lies About Return Type
+
+**File:** `scripts/config.py:49`
+```python
+def validate_json_data(data: dict) -> tuple:
+```
+
+**Problem:** The function can receive `None` (from `generate_templates()` failure), which isn't a `dict`. The isinstance check handles it, but the type annotation is misleading.
+
+**Proper signature:**
+```python
+def validate_json_data(data: dict | None) -> tuple[bool, str | None]:
+```
+
+Or with older Python:
+```python
+from typing import Optional, Tuple
+def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
+```
+
+---
+
+### Low: Filename Collision Risk
+
+**File:** `scripts/librarian.py:187`
+```python
+filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:50]}.md"
+```
+
+**Scenario:** Two videos from same channel, same day, titles starting with same 50 characters:
+- "How to Build Production AI Systems Part 1 - Introduction"
+- "How to Build Production AI Systems Part 2 - Advanced"
+
+Both become:
+```
+2026-01-06_Nick_Saraev_How-to-Build-Production-AI-Systems-Part.md
+```
+
+Second one overwrites first.
+
+**Mitigation:** Add video ID or timestamp:
+```python
+video_id = metadata.get("id", "")[:8]
+filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{video_id}.md"
+```
+
+---
+
+### Low: Inconsistent Path API Usage
+
+**File:** `scripts/synthesize.py:13`
+```python
+if not os.path.exists(LIBRARY_DIR):
+```
+
+**But:** `LIBRARY_DIR` is a `Path` object (from config.py:13).
+
+**This works** because `os.path.exists()` accepts Path objects, but it's inconsistent with the rest of the codebase that uses pathlib directly.
+
+**Cleaner:**
+```python
+if not LIBRARY_DIR.exists():
+```
+
+---
+
+## 4. Evidence-Based Critique (v3)
+
+| Issue | File:Line | Code Evidence | Severity |
+|-------|-----------|---------------|----------|
+| No `<think>` stripping | `config.py:43` | `return result.stdout.strip()` | 🔴 Critical |
+| Redundant health checks | `config.py:31` + librarian call flow | Double `check_ollama_health()` | 🟠 High |
+| Error string returned | `bridge.py:16` | `return f"Error calling Ollama: {str(e)}"` | 🟠 High |
+| Unused import | `config.py:5` | `import requests` | 🟡 Medium |
+| Misleading error msg | `config.py:32` | References `{OLLAMA_URL}` for CLI mode | 🟡 Medium |
+| Missing health check | `bridge.py:136`, `synthesize.py:84` | No `check_environment()` | 🟡 Medium |
+| Type annotation wrong | `config.py:49` | `data: dict` but can be None | 🟢 Low |
+| Filename collision | `librarian.py:187` | No video ID in filename | 🟢 Low |
+| Inconsistent Path API | `synthesize.py:13` | `os.path.exists(Path())` | 🟢 Low |
+
+---
+
+## 5. Remediation Tasks (Final Sprint)
+
+### Task 1: Restore `<think>` Tag Stripping
 **File:** `scripts/config.py`
-**Location:** Line 19
+**Location:** After line 42
+**Add:**
+```python
+result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
+response = result.stdout.strip()
+# Strip DeepSeek-R1 thinking tags
+response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+return response
+```
+**Done when:** Output from `run_ollama_command()` contains no `<think>` tags
+
+---
+
+### Task 2: Remove Unused Import
+**File:** `scripts/config.py`
+**Location:** Line 5
 **Delete:**
 ```python
-cmd = ["ollama", "run", OLLAMA_MODEL, prompt]
+import requests
 ```
-**Done when:** Only one `cmd =` assignment exists in `run_ollama_command()`
+**Done when:** `grep -n "import requests" scripts/config.py` returns nothing
 
 ---
 
-### Task 4: Move Directory Init to Function
+### Task 3: Fix Error Message
 **File:** `scripts/config.py`
-**Location:** Lines 101-103
+**Location:** Line 32
 **Current:**
 ```python
-for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-    os.makedirs(d, exist_ok=True)
+raise RuntimeError(f"Critical: Ollama is not running at {OLLAMA_URL}. Start it with: ollama serve")
 ```
 **Replace with:**
 ```python
-def initialize_directories():
-    """Create required directories. Call from main() only."""
-    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-        os.makedirs(d, exist_ok=True)
+raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
 ```
-**Then:** Add `initialize_directories()` call to each script's `main()` function
-**Done when:** Importing config.py doesn't create directories
+**Done when:** Error message doesn't reference HTTP URL for CLI-based code
 
 ---
 
-### Task 5: Consolidate Imports
-**File:** `scripts/config.py`
-**Location:** Top of file
-**Move all imports to top:**
-```python
-import os
-import json
-import re
-import hashlib
-import shutil
-import subprocess
-from pathlib import Path
-```
-**Remove:** Lines 38, 49, 80 (inline imports)
-**Done when:** No `import` statements appear after line 10
-
----
-
-### Task 6: Narrow Exception Catch in Health Check
-**File:** `scripts/config.py`
-**Location:** Lines 93-97
+### Task 4: Fix Error Return in bridge.py
+**File:** `scripts/bridge.py`
+**Location:** Lines 14-16
 **Current:**
 ```python
-except Exception:
+except Exception as e:
+    print(f"Error calling Ollama: {str(e)}")
+    return f"Error calling Ollama: {str(e)}"
 ```
 **Replace with:**
 ```python
-except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-    print(f"[!] Critical: Ollama CLI check failed: {e}")
-    return False
+except Exception as e:
+    print(f"Error calling Ollama: {str(e)}")
+    return None
 ```
-**Done when:** Ctrl+C during health check raises KeyboardInterrupt properly
+**Done when:** `call_ollama()` returns `None` on failure, not error string
 
 ---
 
-## 7. Task Dependency Graph
+### Task 5: Add Health Checks to bridge.py and synthesize.py
+**File:** `scripts/bridge.py`
+**Location:** Line 7 (imports) and line 138 (main)
+**Add to imports:**
+```python
+from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment
+```
+**Add to main() before initialize_directories():**
+```python
+if not check_environment():
+    sys.exit(1)
+```
 
-### Phase 1: Parallel (Independent)
+**Repeat for:** `scripts/synthesize.py`
+**Done when:** Running `python scripts/bridge.py --help` with Ollama stopped shows health check message
+
+---
+
+### Task 6: Cache Health Check Result
+**File:** `scripts/config.py`
+**Location:** Before `run_ollama_command()` function
+**Add:**
+```python
+_ollama_health_verified = False
+
+def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
+    global _ollama_health_verified
+    if not _ollama_health_verified:
+        if not check_ollama_health():
+            raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
+        _ollama_health_verified = True
+    # ... rest of function
+```
+**Done when:** Multiple `run_ollama_command()` calls only check health once per process
+
+---
+
+## 6. Task Dependency Graph
+
+### Phase 1: Parallel (All Independent)
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Task 1: Environment variable for GLOBAL_LIBRARY_PATH       │
-│  Task 2: Fix subtitle selection                             │
-│  Task 3: Remove dead code                                   │
-│  Task 5: Consolidate imports                                │
-│  Task 6: Narrow exception catch                             │
+│  Task 1: Restore <think> stripping                          │
+│  Task 2: Remove unused import                               │
+│  Task 3: Fix error message                                  │
+│  Task 4: Fix error return type                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Phase 2: Sequential (Depends on Phase 1)
+### Phase 2: Sequential (After Task 4)
 ```
-Task 4: Move directory init to function
+Task 5: Add health checks to bridge.py and synthesize.py
     │
     ▼
-Update librarian.py, bridge.py, synthesize.py main() to call initialize_directories()
+Task 6: Cache health check result (prevents double-check after Task 5)
 ```
 
 ---
 
-## 8. Final Assessment
+## 7. Final Assessment
 
-**Progress made:** You fixed 8 of 10 issues from the first review. The codebase moved from "dangerous" to "fragile." That's real progress.
+**Progress:** You've addressed all 9 issues from v2 and introduced 9 new ones—but the new ones are less severe. You've traded critical architectural flaws for medium-severity bugs and cleanup items.
 
-**Remaining risk:** The hardcoded path is still the critical blocker for any use outside your specific machine. Fix that first. Everything else is polish.
-
-**Verdict change:** Upgraded from **[Dangerous Wrapper]** to **[Needs Major Refactor]** because:
-1. No more auto-corruption of source code (healer dead)
-2. Health checks prevent silent failures
-3. Race conditions eliminated
-4. Proper error handling in most places
+**Current state:**
+- ✅ Portable (env vars for all paths)
+- ✅ Deterministic (proper subtitle selection)
+- ✅ Fail-safe (parse_decision with UNKNOWN handling)
+- ✅ No import-time side effects
+- ❌ Output pollution (`<think>` tags)
+- ❌ Redundant work (double health checks)
+- ❌ Error laundering (strings returned as valid responses)
 
 **What blocks [Production Ready]:**
-1. Hardcoded absolute path (must use env var)
-2. Subtitle selection too strict
-3. Import-time side effects
+1. `<think>` tag stripping (your library files will have garbage)
+2. Error handling pattern in bridge.py (silent failures become confusing JSON errors)
+3. Missing health checks in 2 of 3 scripts (inconsistent UX)
 
-Fix those three and you have something deployable.
+Fix those three and you have something I'd deploy.
 
 ---
 
-*Review complete. Progress acknowledged. Finish the job.*
+## 8. The Verdict Trajectory
+
+| Version | Verdict | Key Blocker |
+|---------|---------|-------------|
+| v1 | **[Dangerous Wrapper]** | Healer corrupting source code |
+| v2 | **[Needs Major Refactor]** | Hardcoded absolute path |
+| v3 | **[Approaching Acceptable]** | `<think>` tag pollution |
+| v4 | **[Production Ready]** | *Fix the three items above* |
+
+You're one iteration away. Don't fumble on the goal line.
+
+---
+
+*Review complete. Almost there. Finish it.*
