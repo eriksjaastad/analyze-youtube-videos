@@ -1,317 +1,250 @@
-# CODE REVIEW: YouTube-to-Skill Pipeline
+# CODE REVIEW: YouTube-to-Skill Pipeline (v2)
 
-**Review Date:** 2026-01-06 20:51 UTC
+**Review Date:** 2026-01-06 20:55 UTC
 **Reviewer:** Senior Principal Engineer (Systems Architecture)
-**Commit Reviewed:** acc9651
+**Previous Review:** 2026-01-06 20:51 UTC
+**Commit Reviewed:** cedb58f
 
 ---
 
 ## 1. The Engineering Verdict
 
-### **[Dangerous Wrapper]**
+### **[Needs Major Refactor]** *(Upgraded from "Dangerous Wrapper")*
 
-This pipeline is a toy dressed up as infrastructure. It creates the *illusion* of automation while harboring silent data corruption vectors, hardcoded paths that guarantee failure on any machine but yours, and an LLM-powered "Healer" that will eventually destroy your source code when it hallucinates a "fix." The cross-project coupling to `/Users/eriksjaastad/projects/agent-skills-library/` is not configuration—it's a time bomb. The moment you onboard a collaborator, containerize this, or simply move your home directory, every script in `bridge.py` will fail silently or write files into the void. The "utility evaluation" in bridge.py burns tokens on an LLM call that provides zero gating—you parse the decision string with `if "[REJECT]" in evaluation`, which is prompt-injection territory. This is not production code. This is a weekend hack with aspirations.
+Credit where due: someone actually read the last review. The Healer is dead. There's a central config. Health checks exist. Temp directories are namespaced. This is no longer a ticking time bomb—it's now merely a minefield with some flags planted.
 
----
+**But the #1 issue from the last review is still unfixed.** The hardcoded absolute path `/Users/eriksjaastad/projects/agent-skills-library` moved from `bridge.py` to `config.py`, where it's now a *centralized* landmine instead of a *scattered* one. Same explosion radius, different file. The subtitle selection logic will miss any non-standard language codes. And the `[REJECT]` string-matching control flow remains bypassable.
 
-## 2. The "Toy" Test & Utility Reality Check
-
-### False Confidence (The "Lies" in the Code)
-
-| # | File | Code | Problem | Impact |
-|---|------|------|---------|--------|
-| 1 | `scripts/bridge.py:12` | `GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")` | **Hardcoded absolute path to a user's home directory.** No environment variable, no config file, no CLI argument. | Script fails on any other machine. Docker? CI/CD? Collaboration? Dead on arrival. |
-| 2 | `scripts/librarian.py:104-105` | `elif srt_files: target_file = os.path.join(TEMP_DIR, srt_files[0])` | **Non-deterministic file selection.** `os.listdir()` returns in arbitrary filesystem order. If multiple SRT variants exist, you pick whichever the inode gods favor. | You might analyze auto-subs one run, manual subs the next. Results are non-reproducible. |
-| 3 | `scripts/librarian.py:113-114` | `try: os.remove(...) except: pass` | **Bare except that swallows all errors.** Permission denied? Disk full? File locked? You'll never know. | Silent failures corrupt your assumptions about system state. Debugging becomes impossible. |
-| 4 | `scripts/healer.py:98-99` | `with open(args.skill, 'w', ...): f.write(healed_code)` | **LLM output written directly to source file with ZERO validation.** No syntax check, no AST parse, no test run, no diff review. | One hallucinated fix corrupts your codebase. The "backup" doesn't help if you don't notice until 10 commits later. |
-| 5 | `scripts/bridge.py:162` | `if "[REJECT]" in evaluation and not args.dry_run:` | **String-matching on unstructured LLM output for control flow.** If the model says "This is NOT a [REJECT]ion," your conditional fails. | Prompt injection or model drift bypasses your "gatekeeper." This is security theater. |
-| 6 | `scripts/bridge.py:189-194` | `f.write(templates["SKILL_MD"])` | **No validation that `templates` dict contains expected keys.** `generate_templates()` can return malformed JSON. | `KeyError` crash, or worse—partial writes to the skills library. |
-| 7 | `scripts/librarian.py:77-88` | Writes to `scripts/temp/transcript` without locking | **Race condition.** Two concurrent librarian runs write to the same temp file. | Data corruption. You analyze a transcript from the wrong video. |
-| 8 | `scripts/synthesize.py:29` | `for filename in sorted(os.listdir(LIBRARY_DIR)):` | **Sorts by filename, not by creation date or semantic relevance.** | Synthesis order is arbitrary. If file naming conventions drift, so does your aggregation logic. |
-| 9 | Configuration sprawl | `OLLAMA_URL` defined in `librarian.py:10`, `healer.py:8`, `synthesize.py:9` | **DRY violation.** Three places to change if you switch Ollama port. | Configuration drift. One script points to localhost:11434, another to a Docker container. Silent mismatch. |
-| 10 | `scripts/bridge.py:20-24` | `subprocess.run(["ollama", "run", OLLAMA_MODEL, prompt], ...)` | **Different Ollama invocation than other scripts** (CLI vs HTTP API). No timeout. | Inconsistent behavior. If Ollama CLI changes, this breaks while others keep working. |
+You've gone from "will definitely break" to "will probably break under specific conditions." Progress. Not victory.
 
 ---
 
-### The Bus Factor
+## 2. What Was Fixed (Acknowledgment)
 
-**Undocumented Order Dependencies:**
+| Original Issue | Status | Evidence |
+|----------------|--------|----------|
+| healer.py (code corruption) | ✅ **FIXED** | File deleted |
+| Configuration sprawl | ✅ **FIXED** | `scripts/config.py` centralizes constants |
+| Bare `except: pass` | ✅ **FIXED** | `librarian.py:101-102` now catches `OSError` with message |
+| No health checks | ✅ **FIXED** | `config.py:76-99` checks yt-dlp, ollama CLI, service responsiveness |
+| Race condition in temp dir | ✅ **FIXED** | `config.py:51-54` uses SHA256 hash of URL for unique temp dirs |
+| No subprocess timeout | ✅ **FIXED** | `config.py:35` adds timeout parameter (default 300s) |
+| No JSON validation in bridge | ✅ **FIXED** | `config.py:67-74` validates required keys before write |
+| Mixed Ollama invocation | ✅ **FIXED** | All scripts now use `run_ollama_command()` wrapper |
 
-1. **Librarian → Library directory** must exist or `save_to_library()` creates it, but `update_index()` expects `library/00_Index_Library.md` to already exist (line 300-301). If you run Librarian before manually creating the index, it prints a warning and silently skips indexing.
-
-2. **Synthesize → Library** assumes `library/` contains `.md` files. If Librarian hasn't run, Synthesize exits with "No documents found." No programmatic way to verify the pipeline state.
-
-3. **Bridge → Synthesize output** expects a source file from synthesis, but there's no contract. You pass `--source` manually. Nothing validates the file is a synthesis output vs. raw library entry.
-
-4. **Healer → Any Python file**. No scope restriction. You could point it at `bridge.py` itself and let the LLM rewrite your promotion logic.
-
-5. **GLOBAL_LIBRARY_PATH** in bridge.py is assumed to exist with specific subdirectories (`claude-skills/`, `cursor-rules/`, `playbooks/`). No validation. `mkdir -p` on line 185 will create them, but if the base path is wrong, you're writing to `/Users/eriksjaastad/projects/agent-skills-library/claude-skills/some-skill/SKILL.md` on a Linux server where that path doesn't exist.
-
----
-
-### 10 Failure Modes
-
-1. **Ollama Not Running:** Every script prints an error and returns `None` or a useless string. No retry. No health check. User sees partial output with no clear indication of what failed.
-
-2. **Ollama Timeout:** `synthesize.py` sets 300s timeout (line 88). If your M4 Pro takes 301 seconds on a 64k context synthesis, you get a `requests.exceptions.ReadTimeout` and lose all progress.
-
-3. **Disk Full During Write:** `save_to_library()` opens file, writes partial content, crashes. File exists but is corrupt. Index update runs anyway if the exception wasn't raised.
-
-4. **yt-dlp Rate Limited:** YouTube returns 429. `subprocess.run()` captures stderr but doesn't parse it. Script continues with empty transcript. LLM analyzes nothing.
-
-5. **Multiple Concurrent Runs:** Two terminals running `librarian.py` on different URLs. Both write to `scripts/temp/transcript.en.srt`. One overwrites the other mid-read. Corrupt analysis.
-
-6. **LLM Returns Non-JSON (Bridge):** DeepSeek-R1 wraps response in markdown despite prompt. `json.loads()` fails. `generate_templates()` returns `None`. User told "Failed to generate templates" with no context.
-
-7. **LLM Hallucinates Python Syntax (Healer):** Model returns `def foo(: pass`. You write this to your source file. Now your codebase won't even parse. Backup exists but you don't notice until CI fails.
-
-8. **VIDEOS_QUEUE.md Format Drift:** `update_queue()` parses markdown with hardcoded section markers (lines 259-260). Someone adds a typo: `### Priorty Queue`. The URL is never removed. User re-analyzes the same video.
-
-9. **Non-English Subtitles:** Video has Spanish subs only. `--sub-lang en` finds nothing. Auto-subs disabled on video. `transcript` is empty string. LLM "analyzes" an empty transcript and produces hallucinated summary.
-
-10. **agent-skills-library Directory Missing:** Bridge tries to write to `/Users/eriksjaastad/projects/agent-skills-library/claude-skills/`. Path doesn't exist (wrong machine, renamed folder). `mkdir -p` creates nested dirs under non-existent root → `FileNotFoundError` or worse, creates orphan directories in `/Users/` on a shared server.
+**Net improvement: 8 of 10 critical issues addressed.** That's a solid remediation pass.
 
 ---
 
-## 3. Deep Technical Teardown
+## 3. What's Still Broken
 
-### Architectural Anti-Patterns
+### Critical: Hardcoded Absolute Path (UNFIXED)
 
-**1. Global Constant Redefinition**
-
-```
-librarian.py:10   OLLAMA_URL = "http://localhost:11434/api/generate"
-librarian.py:11   MODEL = "deepseek-r1:14b"
-
-healer.py:8       OLLAMA_URL = "http://localhost:11434/api/generate"
-healer.py:9       MODEL = "deepseek-r1:14b"
-
-synthesize.py:9   OLLAMA_URL = "http://localhost:11434/api/generate"
-synthesize.py:10  MODEL = "deepseek-r1:14b"
-
-bridge.py:13      OLLAMA_MODEL = "deepseek-r1:14b"  # Different variable name
-bridge.py:15-31   Uses subprocess CLI instead of HTTP API
-```
-
-This is configuration by copy-paste. Change the model in one file, forget the others. Now Librarian uses R1:14b, Healer uses R1:8b, and your pipeline produces inconsistent outputs.
-
-**2. Mixed Ollama Invocation**
-
-- `librarian.py`, `healer.py`, `synthesize.py`: HTTP POST to `/api/generate`
-- `bridge.py`: `subprocess.run(["ollama", "run", ...])`
-
-The CLI invocation doesn't support the same options (no `num_ctx`, no `temperature` passthrough). Your "evaluation" runs with default parameters while everything else uses tuned settings.
-
-**3. Temp Directory as Global Mutable State**
-
-`TEMP_DIR = "scripts/temp"` is a shared dumping ground. No namespacing per video ID. No atomic file operations. No cleanup on failure. This is a classic "works on my machine" pattern that breaks under any concurrent or interrupted execution.
-
----
-
-### State & Data Integrity
-
-**Skill Promotion Has No Verification**
-
-`bridge.py` "promotes" a skill by:
-1. Calling LLM to evaluate (lines 56-80)
-2. Calling LLM to generate templates (lines 82-139)
-3. Writing three files directly (lines 189-194)
-
-**Missing:**
-- No verification that generated SKILL.md contains valid markdown
-- No verification that the playbook structure matches expectations
-- No test that the skill is parseable by the consuming tools
-- No idempotency check—run twice, overwrite without warning
-- No rollback if one of three writes fails
-
-**Library Index Integrity**
-
-`librarian.py:295-328` (`update_index()`) manipulates markdown by splitting strings at section headers. If the index file structure changes—a refactor, a new category—the split logic silently fails. The entry either duplicates or vanishes.
-
----
-
-### Silent Killers
-
-**1. No Service Health Checks**
-
-None of the scripts verify Ollama is running before making requests. A simple `GET /api/tags` health check would save 10 minutes of debugging "why is my analysis empty?"
-
-**2. No Telemetry**
-
-- No timing data (how long did analysis take?)
-- No token counts (how much context did we actually use?)
-- No success/failure metrics
-- No cost tracking if you switch to paid API
-
-**3. Happy Path Assumes External State**
-
-- `yt-dlp` is installed (no check)
-- `ollama` CLI is in PATH (bridge.py assumes it)
-- `VIDEOS_QUEUE.md` exists and is well-formed
-- `library/00_Index_Library.md` exists
-- Network is available
-- YouTube isn't blocking your IP
-
-Every external dependency is assumed present. Every failure mode is a surprise.
-
----
-
-### Complexity Tax
-
-**1. The "Utility Evaluation" is Redundant**
-
-`bridge.py` calls the LLM twice:
-1. `evaluate_utility()` — asks "should we promote this?"
-2. `generate_templates()` — asks "generate the files"
-
-The evaluation output is passed to generation, but the generation prompt doesn't meaningfully use it beyond stuffing it in context. You're burning ~2000 tokens on a decision that could be:
-- A deterministic rule (if source contains specific markers)
-- A single combined prompt
-- A human decision (it's a CLI tool, ask the user)
-
-**2. Regex Gymnastics for JSON Extraction**
-
+**File:** `scripts/config.py:12`
 ```python
-# bridge.py:126-136
-start_idx = response.find('{')
-end_idx = response.rfind('}')
-if start_idx != -1 and end_idx != -1:
-    json_str = response[start_idx:end_idx+1]
+GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
 ```
 
-This "find first `{` and last `}`" approach fails if:
-- The model outputs explanation before JSON
-- The JSON contains nested objects (finds wrong braces)
-- The model outputs multiple JSON blocks
+**Problem:** This was Issue #1 in the last review. It's still here. Just moved files.
 
-Use a proper JSON extraction pattern or constrain the model output with system prompts.
+**Impact:** Bridge.py writes to this path. On any machine where this path doesn't exist:
+- Linux server: Creates `/Users/eriksjaastad/projects/...` directory structure (if permissions allow)
+- Docker container: Same orphan directory creation
+- Collaborator's Mac: Writes to Erik's directory if it exists, fails silently if not
+
+**Required Fix:**
+```python
+GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
+```
 
 ---
 
-## 4. Evidence-Based Critique
+### High: Subtitle Selection Misses Variants
 
-| Issue | File:Line | Code Evidence | Impact |
-|-------|-----------|---------------|--------|
-| Hardcoded user path | `bridge.py:12` | `Path("/Users/eriksjaastad/projects/agent-skills-library")` | Zero portability |
-| Bare except | `librarian.py:114` | `except: pass` | Silent failures |
-| Non-deterministic selection | `librarian.py:105` | `srt_files[0]` | Non-reproducible results |
-| Unvalidated LLM write | `healer.py:98-99` | `f.write(healed_code)` | Source corruption |
-| String-match control flow | `bridge.py:162` | `if "[REJECT]" in evaluation` | Bypassable gating |
-| No key validation | `bridge.py:189` | `templates["SKILL_MD"]` | KeyError crash |
-| Mixed API patterns | `bridge.py:20` vs `librarian.py:182` | CLI vs HTTP | Inconsistent behavior |
-| Race condition | `librarian.py:77` | Shared temp path | Data corruption |
-| No timeout handling | `bridge.py:20-24` | `subprocess.run()` no timeout | Infinite hang |
-| Missing deps check | All files | No `shutil.which()` calls | Cryptic failures |
-
----
-
-## 5. Minimum Viable Power (MVP)
-
-### The "Signal": Worth Saving
-
-1. **`clean_srt()` in librarian.py (lines 15-49)**: Solid, deterministic text processing. The regex patterns are correct. This is the kind of code that belongs in a utility module.
-
-2. **Prompt structure in `analyze_with_ollama()` (lines 138-173)**: The "Librarian" persona prompt is well-structured with clear sections. Good example of prompt engineering.
-
-3. **Frontmatter generation in `save_to_library()` (lines 212-234)**: The YAML frontmatter pattern with tags is a reasonable knowledge management approach.
-
-4. **`aggregate_library()` in synthesize.py (lines 14-49)**: Clean file iteration with index filtering. Does one thing correctly.
-
-### The "Noise": Delete Immediately
-
-1. **`healer.py` (entire file)**: This is not "self-healing." This is automated code corruption. Delete it before someone uses it in anger. If you want LLM-assisted fixing, use a proper code review workflow where a human approves changes.
-
-2. **`evaluate_utility()` in bridge.py (lines 56-80)**: Remove this function. It provides no value. Either make promotion deterministic based on source file markers, or trust the human who ran the command.
-
-3. **The existing REVIEW.md content**: It was a friendly chat log, not a code review. (Now replaced.)
-
-4. **Inline Ollama option variations**: The scattered `num_ctx`, `temperature`, `num_predict` settings across files. Centralize or delete.
-
----
-
-## 6. Remediation Task Breakdown (Atomic Tasks)
-
-### Task 1: Create Central Configuration
-**File:** `scripts/config.py` (new file)
-**Location:** New file
-**Code:**
+**File:** `scripts/config.py:56-65`
 ```python
-import os
-from pathlib import Path
+def select_subtitle(filenames: list, base_name: str) -> str:
+    manual_subtitle = f"{base_name}.en.srt"
+    auto_subtitle = f"{base_name}.en.auto-subs.srt"
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
-LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
-TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
-SKILLS_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
-```
-**Done when:** `python -c "from scripts.config import OLLAMA_URL; print(OLLAMA_URL)"` prints the URL.
-
----
-
-### Task 2: Fix Bare Except in Librarian
-**File:** `scripts/librarian.py`
-**Location:** Line 113-114
-**Current:**
-```python
-try: os.remove(os.path.join(TEMP_DIR, f))
-except: pass
-```
-**Replace with:**
-```python
-try:
-    os.remove(os.path.join(TEMP_DIR, f))
-except OSError as e:
-    print(f"[!] Failed to remove temp file {f}: {e}")
-```
-**Done when:** Running with a locked temp file produces a visible error message.
-
----
-
-### Task 3: Fix Non-Deterministic SRT Selection
-**File:** `scripts/librarian.py`
-**Location:** Lines 96-105
-**Current:**
-```python
-srt_files = [f for f in os.listdir(TEMP_DIR) if f.endswith('.srt')]
-# ...
-elif srt_files:
-    target_file = os.path.join(TEMP_DIR, srt_files[0])
-```
-**Replace with:**
-```python
-srt_files = sorted([f for f in os.listdir(TEMP_DIR) if f.endswith('.srt')])
-# Prefer non-auto subs
-manual_srt = [f for f in srt_files if '.auto' not in f.lower()]
-target_file = os.path.join(TEMP_DIR, manual_srt[0] if manual_srt else srt_files[0]) if srt_files else None
-```
-**Done when:** Running twice on same video produces identical transcript selection.
-
----
-
-### Task 4: Add Ollama Health Check
-**File:** `scripts/librarian.py`
-**Location:** Before line 182 (in `analyze_with_ollama`)
-**Add:**
-```python
-def check_ollama_health():
-    try:
-        resp = requests.get(OLLAMA_URL.replace("/api/generate", "/api/tags"), timeout=5)
-        return resp.status_code == 200
-    except:
-        return False
-
-# In analyze_with_ollama, before the request:
-if not check_ollama_health():
-    print("[!] Ollama is not running. Start it with: ollama serve")
+    if manual_subtitle in filenames:
+        return manual_subtitle
+    elif auto_subtitle in filenames:
+        return auto_subtitle
     return None
 ```
-**Done when:** Running with Ollama stopped produces clear error message instead of connection refused.
+
+**Problem:** yt-dlp generates variant filenames:
+- `transcript.en-US.srt`
+- `transcript.en-GB.srt`
+- `transcript.en.vtt` (wrong format, but could exist)
+
+This function only matches exact strings. If YouTube serves `en-US` subtitles, this returns `None` and the transcript is empty.
+
+**Required Fix:**
+```python
+def select_subtitle(filenames: list, base_name: str) -> str:
+    # Sort for determinism, prefer manual over auto
+    srt_files = sorted([f for f in filenames if f.endswith('.srt')])
+    manual = [f for f in srt_files if base_name in f and 'auto' not in f.lower()]
+    auto = [f for f in srt_files if base_name in f and 'auto' in f.lower()]
+
+    if manual:
+        return manual[0]
+    elif auto:
+        return auto[0]
+    elif srt_files:
+        return srt_files[0]  # Fallback to any SRT
+    return None
+```
 
 ---
 
-### Task 5: Remove Hardcoded Path in Bridge
-**File:** `scripts/bridge.py`
+### Medium: String-Match Control Flow Still Bypassable
+
+**File:** `scripts/bridge.py:147`
+```python
+if "[REJECT]" in evaluation and not args.dry_run:
+```
+
+**Problem:** LLM can output "I'm not going to [REJECT] this" and bypass the gate.
+
+**Mitigation (not fix):** This is fundamentally unfixable without structured output. Either:
+1. Remove the gate entirely (trust the human who ran the command)
+2. Use Ollama's JSON mode with a schema
+3. Parse the evaluation with a regex that requires `DECISION: [REJECT]` format
+
+---
+
+### Medium: Side Effects at Import Time
+
+**File:** `scripts/config.py:101-103`
+```python
+# Initialize directories
+for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
+    os.makedirs(d, exist_ok=True)
+```
+
+**Problem:** This runs when `config.py` is imported, not when scripts execute. If you write a unit test that imports config, you create directories. If you import from a read-only filesystem, you crash.
+
+**Required Fix:** Move to a function called explicitly by each script's `main()`:
+```python
+def initialize_directories():
+    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
+        os.makedirs(d, exist_ok=True)
+```
+
+---
+
+### Low: Inconsistent Import Placement
+
+**File:** `scripts/config.py`
+```python
+# Line 1-4: imports at top
+import os
+import json
+import subprocess
+from pathlib import Path
+
+# Line 38: import inside function
+import re
+
+# Line 49: import in middle of file (not inside function)
+import hashlib
+
+# Line 80: import inside function
+import shutil
+```
+
+**Problem:** Scattered imports make dependencies unclear. `hashlib` is imported at module level between function definitions. `re` and `shutil` are imported inside functions (acceptable for optional deps, confusing here since they're always used).
+
+**Required Fix:** Move all imports to top of file.
+
+---
+
+### Low: Orphan Directory Cleanup Missing
+
+**File:** `scripts/librarian.py:103-106`
+```python
+try:
+    os.rmdir(unique_temp)
+except OSError:
+    pass
+```
+
+**Problem:** If temp cleanup fails (non-empty dir), the unique temp directory stays forever. No logging.
+
+**Improvement:**
+```python
+except OSError as e:
+    print(f"[!] Could not remove temp directory {unique_temp}: {e}")
+```
+
+---
+
+## 4. New Issues Introduced
+
+### Issue: Health Check Catches Too Broadly
+
+**File:** `scripts/config.py:93-97`
+```python
+try:
+    subprocess.run(["ollama", "list"], capture_output=True, check=True, timeout=10)
+except Exception:
+    print("[!] Critical: Ollama CLI not responsive. Is the service running?")
+    return False
+```
+
+**Problem:** `except Exception` catches everything including `KeyboardInterrupt`. If user hits Ctrl+C during health check, they get "Ollama CLI not responsive" instead of a clean exit.
+
+**Required Fix:**
+```python
+except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+    print(f"[!] Critical: Ollama CLI not responsive: {e}")
+    return False
+```
+
+---
+
+### Issue: Duplicate cmd Assignment
+
+**File:** `scripts/config.py:19-27`
+```python
+def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
+    cmd = ["ollama", "run", OLLAMA_MODEL, prompt]  # Line 19: First assignment
+
+    # ...
+    full_prompt = prompt
+    if system_prompt:
+        full_prompt = f"System: {system_prompt}\n\nUser: {prompt}"
+
+    cmd = ["ollama", "run", OLLAMA_MODEL, full_prompt]  # Line 27: Overwrites line 19
+```
+
+**Problem:** `cmd` is assigned twice. Line 19 is dead code.
+
+**Required Fix:** Remove line 19.
+
+---
+
+## 5. Evidence-Based Critique (Updated)
+
+| Issue | File:Line | Code Evidence | Status |
+|-------|-----------|---------------|--------|
+| Hardcoded user path | `config.py:12` | `Path("/Users/eriksjaastad/projects/agent-skills-library")` | ❌ UNFIXED |
+| Subtitle selection misses variants | `config.py:56-65` | Only matches exact `.en.srt` or `.en.auto-subs.srt` | ❌ UNFIXED |
+| String-match control flow | `bridge.py:147` | `if "[REJECT]" in evaluation` | ❌ UNFIXED |
+| Side effects at import | `config.py:101-103` | `os.makedirs()` at module level | 🆕 NEW |
+| Broad exception catch | `config.py:95` | `except Exception:` | 🆕 NEW |
+| Dead code | `config.py:19` | First `cmd =` assignment overwritten | 🆕 NEW |
+| Inconsistent imports | `config.py:38,49,80` | `import re/hashlib/shutil` scattered | 🆕 NEW |
+
+---
+
+## 6. Remediation Tasks (Remaining)
+
+### Task 1: Environment Variable for Skills Library Path
+**File:** `scripts/config.py`
 **Location:** Line 12
 **Current:**
 ```python
@@ -321,138 +254,135 @@ GLOBAL_LIBRARY_PATH = Path("/Users/eriksjaastad/projects/agent-skills-library")
 ```python
 GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
 ```
-**Done when:** `SKILLS_LIBRARY_PATH=/tmp/test python scripts/bridge.py --help` doesn't crash.
+**Done when:** `SKILLS_LIBRARY_PATH=/tmp/test python -c "from scripts.config import GLOBAL_LIBRARY_PATH; print(GLOBAL_LIBRARY_PATH)"` prints `/tmp/test`
 
 ---
 
-### Task 6: Add JSON Schema Validation to Bridge
-**File:** `scripts/bridge.py`
-**Location:** After line 132
-**Add:**
+### Task 2: Fix Subtitle Selection for Variants
+**File:** `scripts/config.py`
+**Location:** Lines 56-65
+**Replace entire function with:**
 ```python
-required_keys = {"SKILL_MD", "RULE_MD", "README_MD"}
-if not required_keys.issubset(templates.keys()):
-    missing = required_keys - set(templates.keys())
-    print(f"❌ Generated templates missing keys: {missing}")
-    return None
+def select_subtitle(filenames: list, base_name: str) -> str:
+    """Select subtitle file, handling locale variants like en-US, en-GB."""
+    srt_files = sorted([f for f in filenames if f.endswith('.srt') and base_name in f])
+    manual = [f for f in srt_files if 'auto' not in f.lower()]
+    auto = [f for f in srt_files if 'auto' in f.lower()]
+
+    return manual[0] if manual else (auto[0] if auto else None)
 ```
-**Done when:** Malformed LLM output produces "missing keys" error instead of KeyError crash.
+**Done when:** Function returns correct file for `["transcript.en-US.srt"]` input
 
 ---
 
-### Task 7: Delete healer.py
-**File:** `scripts/healer.py`
-**Location:** Entire file
-**Action:** `rm scripts/healer.py`
-**Done when:** `ls scripts/healer.py` returns "No such file or directory".
+### Task 3: Remove Dead Code
+**File:** `scripts/config.py`
+**Location:** Line 19
+**Delete:**
+```python
+cmd = ["ollama", "run", OLLAMA_MODEL, prompt]
+```
+**Done when:** Only one `cmd =` assignment exists in `run_ollama_command()`
 
 ---
 
-### Task 8: Add Temp Directory Namespacing
-**File:** `scripts/librarian.py`
-**Location:** Line 77
+### Task 4: Move Directory Init to Function
+**File:** `scripts/config.py`
+**Location:** Lines 101-103
 **Current:**
 ```python
-sub_path_base = os.path.join(TEMP_DIR, "transcript")
+for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
+    os.makedirs(d, exist_ok=True)
 ```
 **Replace with:**
 ```python
+def initialize_directories():
+    """Create required directories. Call from main() only."""
+    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
+        os.makedirs(d, exist_ok=True)
+```
+**Then:** Add `initialize_directories()` call to each script's `main()` function
+**Done when:** Importing config.py doesn't create directories
+
+---
+
+### Task 5: Consolidate Imports
+**File:** `scripts/config.py`
+**Location:** Top of file
+**Move all imports to top:**
+```python
+import os
+import json
+import re
 import hashlib
-url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-sub_path_base = os.path.join(TEMP_DIR, f"transcript_{url_hash}")
-```
-**Done when:** Two concurrent runs on different URLs produce different temp files.
-
----
-
-### Task 9: Add yt-dlp Dependency Check
-**File:** `scripts/librarian.py`
-**Location:** Top of `main()` function, line 331
-**Add:**
-```python
 import shutil
-if not shutil.which("yt-dlp"):
-    print("[!] yt-dlp not found. Install with: pip install yt-dlp")
-    sys.exit(1)
+import subprocess
+from pathlib import Path
 ```
-**Done when:** Running without yt-dlp installed produces clear install instruction.
+**Remove:** Lines 38, 49, 80 (inline imports)
+**Done when:** No `import` statements appear after line 10
 
 ---
 
-### Task 10: Add Timeout to Bridge Subprocess
-**File:** `scripts/bridge.py`
-**Location:** Line 20-25
+### Task 6: Narrow Exception Catch in Health Check
+**File:** `scripts/config.py`
+**Location:** Lines 93-97
 **Current:**
 ```python
-result = subprocess.run(
-    ["ollama", "run", OLLAMA_MODEL, prompt],
-    capture_output=True,
-    text=True,
-    check=True
-)
+except Exception:
 ```
 **Replace with:**
 ```python
-result = subprocess.run(
-    ["ollama", "run", OLLAMA_MODEL, prompt],
-    capture_output=True,
-    text=True,
-    check=True,
-    timeout=300
-)
+except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+    print(f"[!] Critical: Ollama CLI check failed: {e}")
+    return False
 ```
-**Done when:** Hanging Ollama process is killed after 5 minutes instead of running forever.
+**Done when:** Ctrl+C during health check raises KeyboardInterrupt properly
 
 ---
 
-## 7. Task Dependency Graph & Execution Order
+## 7. Task Dependency Graph
 
-### Phase 1: Parallel (No Dependencies)
-These can be done simultaneously:
-
+### Phase 1: Parallel (Independent)
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Task 2: Fix bare except                                    │
-│  Task 7: Delete healer.py                                   │
-│  Task 9: Add yt-dlp check                                   │
-│  Task 10: Add subprocess timeout                            │
+│  Task 1: Environment variable for GLOBAL_LIBRARY_PATH       │
+│  Task 2: Fix subtitle selection                             │
+│  Task 3: Remove dead code                                   │
+│  Task 5: Consolidate imports                                │
+│  Task 6: Narrow exception catch                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Phase 2: Sequential (Depends on Phase 1)
-Must be done in order:
-
 ```
-Task 1: Create config.py
+Task 4: Move directory init to function
     │
     ▼
-Task 5: Use config in bridge.py (requires config.py to exist)
-    │
-    ▼
-Task 4: Add Ollama health check (should use config.py's OLLAMA_URL)
-```
-
-### Phase 3: Parallel (Depends on Phase 2)
-Can be done simultaneously after config exists:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Task 3: Fix SRT selection                                  │
-│  Task 6: Add JSON validation                                │
-│  Task 8: Namespace temp directory                           │
-└─────────────────────────────────────────────────────────────┘
+Update librarian.py, bridge.py, synthesize.py main() to call initialize_directories()
 ```
 
 ---
 
-## Final Note
+## 8. Final Assessment
 
-The fundamental problem isn't the bugs—those are fixable. The problem is **design philosophy**. This codebase treats LLM output as trustworthy, external services as always-available, and configuration as something to hardcode. Until that philosophy changes, every fix is a patch on a sinking ship.
+**Progress made:** You fixed 8 of 10 issues from the first review. The codebase moved from "dangerous" to "fragile." That's real progress.
 
-The Healer must die. The Bridge needs a complete rewrite with proper JSON mode and schema validation. The Librarian is salvageable but needs its global state eliminated.
+**Remaining risk:** The hardcoded path is still the critical blocker for any use outside your specific machine. Fix that first. Everything else is polish.
 
-You have the architecture of a distributed system (multiple scripts, external services, cross-project dependencies) with the error handling of a Jupyter notebook. Pick one.
+**Verdict change:** Upgraded from **[Dangerous Wrapper]** to **[Needs Major Refactor]** because:
+1. No more auto-corruption of source code (healer dead)
+2. Health checks prevent silent failures
+3. Race conditions eliminated
+4. Proper error handling in most places
+
+**What blocks [Production Ready]:**
+1. Hardcoded absolute path (must use env var)
+2. Subtitle selection too strict
+3. Import-time side effects
+
+Fix those three and you have something deployable.
 
 ---
 
-*Review complete. No encouragement given. Ship it or delete it.*
+*Review complete. Progress acknowledged. Finish the job.*
