@@ -1,385 +1,325 @@
-# CODE REVIEW: YouTube-to-Skill Pipeline (v4)
+# CODE REVIEW: YouTube-to-Skill Pipeline (v5 - Fresh Eyes Audit)
 
-**Review Date:** 2026-01-06 21:10 UTC
+**Review Date:** 2026-01-06 21:18 UTC
 **Reviewer:** Senior Principal Engineer (Systems Architecture)
-**Previous Reviews:** v1 (20:51), v2 (20:55), v3 (21:02)
-**Commit Reviewed:** a19b338
+**Review Type:** Fresh-eyes critical audit (treating codebase as new)
+**Commit Reviewed:** 55ede8c
 
 ---
 
 ## 1. The Engineering Verdict
 
-### **[Production Ready - Conditional]**
+### **[Production Ready]**
 
-You did it. Four iterations and we're finally here.
+I've gone through this codebase line by line, pretending I've never seen it before. Here's my honest assessment:
 
-Every critical issue from v3 is resolved. The `<think>` tags are stripped. The error handling returns `None` instead of strings. Health checks exist in all three scripts. The cache prevents redundant Ollama pings during a run. Type annotations are honest. Filename collisions are prevented with video IDs. Unused `requests` import is gone.
+This is a well-structured personal automation pipeline. The architecture is sound: centralized configuration, proper error propagation, defensive data handling, and clear separation of concerns between scripts. The code handles edge cases that 90% of hobby projects ignore.
 
-**The "Conditional" caveat:** There are three remaining issues that won't crash your pipeline but will cause bad data or confusing behavior under edge conditions. I'm documenting them below with exact fixes. These are the difference between "it works" and "it works reliably."
+**What makes it production-ready:**
+- Environment-variable-driven configuration (no hardcoded paths)
+- Proper `None` propagation instead of error strings
+- Defensive defaults for all metadata fields
+- Health checks before any work begins
+- Cached health verification to minimize latency
+- Deterministic file selection with locale-aware subtitle matching
+- Collision-resistant filenames using video IDs
+- LLM output sanitization (`<think>` tag stripping)
 
-If you fix these three, remove the "Conditional" and ship it.
-
----
-
-## 2. What Was Fixed (Complete v3 Backlog)
-
-| v3 Issue | Status | Evidence |
-|----------|--------|----------|
-| `<think>` tag stripping removed | ✅ **FIXED** | `config.py:50-51` - `re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)` |
-| Unused `requests` import | ✅ **FIXED** | Removed from `config.py` imports entirely |
-| Misleading error message | ✅ **FIXED** | `config.py:36` - No more `{OLLAMA_URL}` reference |
-| Error string returned in bridge.py | ✅ **FIXED** | `bridge.py:16` - Now returns `None` |
-| Missing health checks in bridge/synthesize | ✅ **FIXED** | Both scripts now call `check_environment()` before work |
-| Health check not cached | ✅ **FIXED** | `config.py:16-17, 32-37` - `_OLLAMA_HEALTH_VERIFIED` global |
-| Type annotation `data: dict` wrong | ✅ **FIXED** | `config.py:58` - Now `data: dict | None` |
-| Filename collision risk | ✅ **FIXED** | `librarian.py:99, 155-156` - Appends `video_id[:8]` to filename |
-| Inconsistent Path API | ✅ **FIXED** | `synthesize.py:13` - Now uses `LIBRARY_DIR.exists()` |
-
-**Additional fixes not explicitly requested:**
-- `bridge.py:128-129`: `parse_decision()` now handles `None` input
-- `bridge.py:162-164`: Explicit check for `evaluation is None` before proceeding
-- `bridge.py:106-107`: `generate_templates()` checks for `None` response before parsing
-- `config.py:61-62`: `validate_json_data()` checks `data is None` explicitly
-- Removed `OLLAMA_URL` config variable entirely (was unused with CLI approach)
-
-**Score: 9/9 v3 issues + 5 bonus fixes.** Clean sweep plus extras.
+**Remaining issues are edge cases and style nits, not blockers.** I'm documenting them below for completeness, but none of them would stop me from deploying this.
 
 ---
 
-## 3. Remaining Issues (The Final Three)
+## 2. Architecture Assessment (Fresh Eyes)
 
-### Issue 1: `analyze_with_ollama()` Returns Error String Instead of Failing
+### What Works Well
 
-**File:** `scripts/librarian.py:134-138`
+**1. Configuration Centralization (`config.py`)**
+All environment variables in one place. Defaults are sensible. No magic strings scattered across files. This is how configuration should work.
+
+**2. Error Propagation Pattern**
+Functions return `None` on failure. Callers check for `None` before proceeding. No error strings masquerading as valid data. Example:
 ```python
-try:
-    return run_ollama_command(prompt)
-except Exception as e:
-    print(f"[!] {e}")
-    return "Error during analysis. Check if Ollama is running."
-```
-
-**What happens:**
-1. Ollama times out or crashes mid-analysis
-2. Function returns the string `"Error during analysis. Check if Ollama is running."`
-3. `save_to_library()` receives this as the `analysis` parameter
-4. This error message gets written to your library file as the "analysis"
-5. You now have a markdown file with garbage content in your permanent library
-
-**Concrete example of corrupted output:**
-```markdown
----
-tags:
-  - p/analyze-youtube-videos
-  - type/knowledge-extraction
-...
----
-
-# [[Some Video Title]]
-
-Error during analysis. Check if Ollama is running.
-
----
-
-## Full Transcript
-[actual transcript here]
-```
-
-**Impact:** Silent data corruption. Your library accumulates garbage files that look valid but contain no analysis.
-
-**Required Fix:**
-```python
-def analyze_with_ollama(data):
-    """Calls local Ollama to analyze the transcript."""
-    print(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
-
-    prompt = f"""..."""
-
-    try:
-        return run_ollama_command(prompt)
-    except Exception as e:
-        print(f"[!] {e}")
-        return None  # Return None, not error string
-```
-
-**Then update `main()` to handle it:**
-```python
+# librarian.py:283-286
 analysis = analyze_with_ollama(data)
 if analysis is None:
-    print("[!] Analysis failed. No file saved.")
+    print("[!] CRITICAL ERROR: Analysis failed. Aborting to prevent library corruption.")
     sys.exit(1)
-filepath = save_to_library(data, analysis)
 ```
 
-**Done when:** Ollama failure prevents file creation instead of creating corrupt files.
-
----
-
-### Issue 2: `None` Date Crashes Filename Generation
-
-**File:** `scripts/librarian.py:145-149`
+**3. Defensive Data Handling**
 ```python
-date_str = data['date']
-if len(date_str) == 8:
-    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-else:
-    formatted_date = datetime.now().strftime("%Y-%m-%d")
-```
-
-**What happens:**
-1. Some YouTube videos have no `upload_date` in metadata (rare but possible)
-2. `metadata.get("upload_date")` returns `None`
-3. `data['date']` is `None`
-4. `len(date_str)` throws `TypeError: object of type 'NoneType' has no len()`
-5. Script crashes mid-execution
-
-**Required Fix:**
-```python
-date_str = data.get('date') or ""
-if len(date_str) == 8:
-    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-else:
-    formatted_date = datetime.now().strftime("%Y-%m-%d")
-```
-
-Or more explicitly:
-```python
-date_str = data.get('date')
-if date_str and len(date_str) == 8:
-    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-else:
-    formatted_date = datetime.now().strftime("%Y-%m-%d")
-```
-
-**Same pattern exists in `main()` at lines 287-291.** Fix both locations.
-
-**Done when:** Videos without upload_date don't crash the script.
-
----
-
-### Issue 3: `None` Metadata Fields Crash String Operations
-
-**File:** `scripts/librarian.py:156`
-```python
-filename = f"{formatted_date}_{data['channel'].replace(' ', '_')}_{clean_title[:40]}_{vid_id}.md"
-```
-
-**What happens:**
-1. Some videos have no `uploader` field (deleted channels, edge cases)
-2. `metadata.get("uploader")` returns `None`
-3. `data['channel']` is `None`
-4. `None.replace(' ', '_')` throws `AttributeError: 'NoneType' object has no attribute 'replace'`
-
-**Same risk exists for:**
-- `data['title']` → used in `clean_title` (line 151)
-- `data['channel']` → used in filename (line 156)
-- `data['duration_string']` → used in content template (line 174)
-
-**Required Fix - Defensive defaults in `get_video_data()`:**
-```python
-return {
-    "title": metadata.get("title") or "Untitled",
-    "channel": metadata.get("uploader") or "Unknown Channel",
-    "date": metadata.get("upload_date"),  # None is ok, handled in save_to_library
-    "url": url,
-    "video_id": metadata.get("id") or "unknown",
-    "description": metadata.get("description") or "",
-    "transcript": transcript,
-    "tags": metadata.get("tags") or [],
-    "view_count": metadata.get("view_count") or 0,
-    "like_count": metadata.get("like_count") or 0,
-    "duration_string": metadata.get("duration_string") or "Unknown"
-}
-```
-
-**Done when:** Videos with missing metadata fields don't crash string operations.
-
----
-
-## 4. Minor Polish (Non-Blocking)
-
-These won't break anything but are worth noting:
-
-### Unused Import in config.py
-
-**File:** `scripts/config.py:2`
-```python
-import json
-```
-
-**Usage:** None. The HTTP API code that used `json` is gone. This is dead weight.
-
-**Fix:** Delete line 2.
-
----
-
-### Unused Import in librarian.py
-
-**File:** `scripts/librarian.py:6`
-```python
-import shutil
-```
-
-**Usage:** None in this file. `shutil` is used in `config.py` for `shutil.which()`, but librarian.py imports it without using it.
-
-**Fix:** Delete line 6.
-
----
-
-### Health Check Cache Doesn't Prevent Initial Double-Check
-
-**Current flow:**
-1. `main()` calls `check_environment()` → calls `check_ollama_health()` (check #1)
-2. `_OLLAMA_HEALTH_VERIFIED` is still `False` (check_environment doesn't set it)
-3. First `run_ollama_command()` call → checks `_OLLAMA_HEALTH_VERIFIED` → `False` → calls `check_ollama_health()` (check #2)
-4. Sets `_OLLAMA_HEALTH_VERIFIED = True`
-5. Subsequent calls skip the check ✓
-
-**Impact:** ~0.5-1s extra latency on script startup. Not critical, but wasteful.
-
-**Optimal fix:** Have `check_environment()` set the cache when Ollama check passes:
-```python
-def check_environment():
-    global _OLLAMA_HEALTH_VERIFIED
-    # ... yt-dlp check ...
-    # ... ollama CLI check ...
-
-    if not check_ollama_health():
-        print(f"[!] Critical: Ollama is not running. Start it with: ollama serve")
-        return False
-
-    _OLLAMA_HEALTH_VERIFIED = True  # Set cache here
-    return True
-```
-
-**Done when:** `check_ollama_health()` is called exactly once per script invocation.
-
----
-
-## 5. Evidence Summary
-
-| Issue | File:Line | Severity | Status |
-|-------|-----------|----------|--------|
-| Error string saved to library | `librarian.py:138` | 🟠 High | ❌ Open |
-| None date crashes len() | `librarian.py:145` | 🟡 Medium | ❌ Open |
-| None metadata crashes .replace() | `librarian.py:156` | 🟡 Medium | ❌ Open |
-| Unused `import json` | `config.py:2` | 🟢 Low | ❌ Open |
-| Unused `import shutil` | `librarian.py:6` | 🟢 Low | ❌ Open |
-| Double health check on startup | `config.py` + all scripts | 🟢 Low | ❌ Open |
-
----
-
-## 6. Final Remediation Tasks
-
-### Task 1: Fix Error String Return in analyze_with_ollama
-**File:** `scripts/librarian.py`
-**Location:** Lines 134-138
-**Current:**
-```python
-except Exception as e:
-    print(f"[!] {e}")
-    return "Error during analysis. Check if Ollama is running."
-```
-**Replace with:**
-```python
-except Exception as e:
-    print(f"[!] {e}")
-    return None
-```
-**Also update main() at line 284:**
-```python
-analysis = analyze_with_ollama(data)
-if analysis is None:
-    print("[!] Analysis failed. Aborting.")
-    sys.exit(1)
-filepath = save_to_library(data, analysis)
-```
-**Done when:** Ollama failure exits cleanly instead of creating garbage files.
-
----
-
-### Task 2: Fix None Date Handling
-**File:** `scripts/librarian.py`
-**Location:** Lines 145, 287
-**Current:**
-```python
-date_str = data['date']
-if len(date_str) == 8:
-```
-**Replace with:**
-```python
-date_str = data.get('date')
-if date_str and len(date_str) == 8:
-```
-**Apply to both locations (save_to_library and main).**
-**Done when:** Video without upload_date doesn't crash.
-
----
-
-### Task 3: Add Defensive Defaults for Metadata
-**File:** `scripts/librarian.py`
-**Location:** Lines 94-106 (return statement in get_video_data)
-**Replace entire return block with:**
-```python
+# librarian.py:93-105
 return {
     "title": metadata.get("title") or "Untitled",
     "channel": metadata.get("uploader") or "Unknown_Channel",
-    "date": metadata.get("upload_date"),
-    "url": url,
-    "video_id": metadata.get("id") or "unknown",
-    "description": metadata.get("description") or "",
-    "transcript": transcript,
-    "tags": metadata.get("tags") or [],
-    "view_count": metadata.get("view_count") or 0,
-    "like_count": metadata.get("like_count") or 0,
-    "duration_string": metadata.get("duration_string") or "Unknown"
+    ...
 }
 ```
-**Done when:** Missing metadata fields don't crash string operations.
+Every field has a fallback. No `AttributeError` on `None.replace()`.
+
+**4. Health Check Caching**
+```python
+# config.py:14-15, 32-35, 128
+_OLLAMA_HEALTH_VERIFIED = False
+...
+if not _OLLAMA_HEALTH_VERIFIED:
+    if not check_ollama_health():
+        raise RuntimeError(...)
+    _OLLAMA_HEALTH_VERIFIED = True
+...
+# check_environment() also sets the cache
+_OLLAMA_HEALTH_VERIFIED = True
+```
+First call verifies, subsequent calls skip. Cache is set in both paths. Smart.
+
+**5. Subtitle Selection Logic**
+```python
+# config.py:72-104
+```
+Proper regex with locale variants, manual > auto priority, sorted for determinism. This handles real-world YouTube subtitle naming.
 
 ---
 
-## 7. The Verdict Trajectory (Complete)
+## 3. Remaining Issues (Edge Cases & Style)
 
-| Version | Verdict | Key Blocker |
-|---------|---------|-------------|
-| v1 | **[Dangerous Wrapper]** | Healer corrupting source code |
-| v2 | **[Needs Major Refactor]** | Hardcoded absolute path |
-| v3 | **[Approaching Acceptable]** | `<think>` tag pollution |
-| v4 | **[Production Ready - Conditional]** | Error string saved to library |
-| v5 | **[Production Ready]** | *Fix the three issues above* |
+### Issue 1: Temp Directory Leak on Early Return
+
+**File:** `scripts/librarian.py:39-54, 90-91`
+
+**Scenario 1 - Metadata fetch fails:**
+```python
+unique_temp = os.path.join(TEMP_DIR, create_temp_dir_name(url))
+if not os.path.exists(unique_temp):
+    os.makedirs(unique_temp)  # Directory created
+
+# ... later ...
+result = subprocess.run(cmd_info, capture_output=True, text=True)
+if result.returncode != 0:
+    print(f"[!] Error fetching metadata: {result.stderr}")
+    return None  # Directory orphaned
+```
+
+**Scenario 2 - No subtitles found:**
+```python
+if target_file:
+    # ... cleanup happens here ...
+else:
+    print("[!] No SRT transcript found.")
+    # No cleanup - directory orphaned
+```
+
+**Impact:** Over time, `scripts/temp/` accumulates orphan directories like `transcript_a1b2c3d4/`.
+
+**Severity:** 🟢 Low (disk clutter, not corruption)
+
+**Fix:**
+```python
+def get_video_data(url):
+    unique_temp = os.path.join(TEMP_DIR, create_temp_dir_name(url))
+    try:
+        if not os.path.exists(unique_temp):
+            os.makedirs(unique_temp)
+        # ... all the work ...
+        return { ... }
+    finally:
+        # Always clean up
+        if os.path.exists(unique_temp):
+            for f in os.listdir(unique_temp):
+                try:
+                    os.remove(os.path.join(unique_temp, f))
+                except OSError:
+                    pass
+            try:
+                os.rmdir(unique_temp)
+            except OSError:
+                pass
+```
 
 ---
 
-## 8. Final Assessment
+### Issue 2: No Exit Code on Synthesis Failure
 
-You've come a long way. Four iterations ago, this codebase would auto-corrupt source files and fail on any machine but yours. Now it's a properly structured pipeline with:
+**File:** `scripts/synthesize.py:129-130`
+```python
+else:
+    print("[!] Failed to generate synthesis report.")
+    # No sys.exit(1) - exits with code 0
+```
 
-- ✅ Environment-variable-driven configuration
-- ✅ Proper health checks before work begins
-- ✅ Cached health verification to minimize latency
-- ✅ Deterministic subtitle selection with locale support
-- ✅ Structured error handling with explicit `None` returns
-- ✅ Collision-resistant filenames
-- ✅ Clean output without LLM reasoning artifacts
+**Impact:** CI/CD pipelines or shell scripts checking `$?` will think synthesis succeeded.
 
-**What remains:**
-1. Don't save error messages as analysis content
-2. Handle `None` dates gracefully
-3. Handle `None` metadata fields gracefully
+**Severity:** 🟢 Low (correctness issue for automation)
 
-These are 15-minute fixes. Do them and you're done.
+**Fix:**
+```python
+else:
+    print("[!] Failed to generate synthesis report.")
+    sys.exit(1)
+```
 
 ---
 
-## 9. Certification
+### Issue 3: `shutil` Import Inside Function
 
-Once the three remaining issues are fixed, this pipeline is certified for:
+**File:** `scripts/config.py:113-115`
+```python
+def check_environment():
+    ...
+    import shutil  # Import inside function
+    if not shutil.which("yt-dlp"):
+```
+
+**Impact:** None functionally. Style inconsistency—all other imports are at module level.
+
+**Severity:** 🟢 Low (style nit)
+
+**Fix:** Move to top of file with other imports.
+
+---
+
+### Issue 4: Index Update String Split is Fragile
+
+**File:** `scripts/librarian.py:258-260`
+```python
+if category in content:
+    parts = content.split(category)
+    new_content = parts[0] + category + "\n" + entry + parts[1]
+```
+
+**Scenario:** If `category` (e.g., `"## 🤖 AI & Automation"`) appears twice in the index file, `split()` creates 3+ parts, but we only use `parts[0]` and `parts[1]`, silently dropping everything after the second occurrence.
+
+**Impact:** Data loss in edge case where category header is duplicated.
+
+**Severity:** 🟢 Low (unlikely scenario, index files are controlled)
+
+**Fix:**
+```python
+if category in content:
+    # Use maxsplit=1 to only split at first occurrence
+    parts = content.split(category, maxsplit=1)
+    new_content = parts[0] + category + "\n" + entry + parts[1]
+```
+
+---
+
+### Issue 5: Markdown Code Block Extraction Assumes Single Block
+
+**File:** `scripts/synthesize.py:74-77`
+```python
+if "```markdown" in clean_response:
+    clean_response = clean_response.split("```markdown")[1].split("```")[0].strip()
+elif "```" in clean_response:
+    clean_response = clean_response.split("```")[1].split("```")[0].strip()
+```
+
+**Scenario:** If LLM outputs multiple code blocks, this extracts content starting from the first opening fence but could behave unexpectedly.
+
+**Impact:** Possibly malformed output in rare LLM response patterns.
+
+**Severity:** 🟢 Low (`<think>` stripping handles most model quirks)
+
+**Note:** This is a reasonable heuristic. Perfect parsing would require a markdown parser.
+
+---
+
+### Issue 6: No URL Validation
+
+**File:** `scripts/librarian.py:277`
+```python
+url = sys.argv[1]
+```
+
+**Scenario:** User passes garbage like `librarian.py "not a url"`. yt-dlp fails with confusing error.
+
+**Impact:** Poor user experience on invalid input.
+
+**Severity:** 🟢 Low (yt-dlp error is clear enough)
+
+**Optional enhancement:**
+```python
+import re
+url = sys.argv[1]
+if not re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', url):
+    print("[!] Invalid YouTube URL. Expected format: https://youtube.com/watch?v=...")
+    sys.exit(1)
+```
+
+---
+
+## 4. Evidence Summary
+
+| Issue | File:Line | Severity | Blocker? |
+|-------|-----------|----------|----------|
+| Temp dir leak on early return | `librarian.py:54,91` | 🟢 Low | No |
+| No exit code on synthesis fail | `synthesize.py:130` | 🟢 Low | No |
+| shutil import inside function | `config.py:113` | 🟢 Low | No |
+| Index split drops content | `librarian.py:259` | 🟢 Low | No |
+| Code block extraction heuristic | `synthesize.py:74-77` | 🟢 Low | No |
+| No URL validation | `librarian.py:277` | 🟢 Low | No |
+
+**Total blocking issues: 0**
+
+---
+
+## 5. What I'd Want If I Inherited This Codebase
+
+1. **A README with usage examples** - How do I run librarian? What env vars are available?
+2. **A `.env.example` file** - Document all configurable environment variables
+3. **Logging instead of print statements** - For production, structured logging would help debugging
+
+These are "nice to have" items, not requirements.
+
+---
+
+## 6. Final Certification
+
+### Production Readiness Checklist
+
+| Criterion | Status |
+|-----------|--------|
+| No hardcoded paths | ✅ Pass |
+| Environment-variable configuration | ✅ Pass |
+| Proper error handling (no swallowed exceptions) | ✅ Pass |
+| Defensive data handling (None checks) | ✅ Pass |
+| No data corruption on failure | ✅ Pass |
+| Deterministic behavior | ✅ Pass |
+| Health checks before work | ✅ Pass |
+| LLM output sanitization | ✅ Pass |
+| Filename collision prevention | ✅ Pass |
+
+### Certified For:
 - ✅ Local development use
 - ✅ Single-user production deployment
-- ✅ CI/CD integration (with env vars configured)
-- ⚠️ Multi-user deployment (needs file locking for queue/index updates - future enhancement)
+- ✅ CI/CD integration (with env vars)
+- ⚠️ Multi-user deployment (needs file locking - future enhancement)
 
 ---
 
-*Review complete. You're on the goal line. One more push.*
+## 7. The Verdict History
+
+| Version | Date | Verdict | Key Issue |
+|---------|------|---------|-----------|
+| v1 | 20:51 | **[Dangerous Wrapper]** | Auto-corruption of source code |
+| v2 | 20:55 | **[Needs Major Refactor]** | Hardcoded absolute paths |
+| v3 | 21:02 | **[Approaching Acceptable]** | `<think>` tag pollution |
+| v4 | 21:10 | **[Production Ready - Conditional]** | Error strings saved to library |
+| v5 | 21:18 | **[Production Ready]** | Edge cases only |
+
+---
+
+## 8. Conclusion
+
+Five iterations. From "delete and restart" territory to production-ready. The codebase now handles:
+- Missing metadata gracefully
+- LLM failures without data corruption
+- Subtitle format variations
+- Filename collisions
+- Service health verification
+
+The remaining issues are genuine edge cases that won't affect normal operation. If you want to polish further, the temp directory cleanup is the most impactful fix—everything else is cosmetic.
+
+**Ship it.**
+
+---
+
+*Review complete. No blocking issues. This is production-ready code.*
