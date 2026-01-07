@@ -1,0 +1,9 @@
+# Ignore large data and temp files
+library/index.yaml
+library/*.md
+synthesis/*.md
+scripts/temp/
+data/
+venv/
+__pycache__/
+.DS_Store

@@ -4,23 +4,26 @@ import argparse
 import json
 import re
 from pathlib import Path
-from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment
+from typing import Optional, Dict, Any, Tuple
+from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment, safe_slug, logger
 
-def call_ollama(prompt):
+def call_ollama(prompt: str) -> Optional[str]:
     """Standardized Ollama CLI call."""
-    print(f"Calling Ollama with prompt: {prompt[:100]}...")
+    logger.info(f"Calling Ollama with prompt: {prompt[:100]}...")
     try:
         return run_ollama_command(prompt)
     except Exception as e:
-        print(f"❌ Error calling Ollama: {str(e)}")
+        logger.error(f"Error calling Ollama: {str(e)}")
         return None
 
-def extract_skill_data(source_path, skill_name):
+def extract_skill_data(source_path: str, skill_name: str) -> Optional[str]:
     """Read the source file and extract context about the skill."""
-    if not os.path.exists(source_path):
+    source = Path(source_path)
+    if not source.exists():
+        logger.error(f"Source path {source_path} does not exist.")
         return None
     
-    with open(source_path, "r") as f:
+    with open(source, "r", encoding='utf-8') as f:
         content = f.read()
     
     # Try to find the skill name in the content and get surrounding context
@@ -37,7 +40,7 @@ def extract_skill_data(source_path, skill_name):
     
     return "\n".join(context) if context else content
 
-def evaluate_utility(skill_name, context):
+def evaluate_utility(skill_name: str, context: str) -> Optional[str]:
     """Use Ollama to evaluate if this skill is worth promoting."""
     prompt = f"""
     You are an expert AI orchestrator. Evaluate if the following potential "Skill" is worth adding to a permanent Global Skills Library.
@@ -62,7 +65,7 @@ def evaluate_utility(skill_name, context):
     
     return call_ollama(prompt)
 
-def generate_templates(skill_name, evaluation, context):
+def generate_templates(skill_name: str, evaluation: str, context: str) -> Optional[Dict[str, str]]:
     """Use Ollama to generate the actual file contents based on the evaluation and context."""
     prompt = f"""
     Generate three files for a new skill called "{skill_name}".
@@ -116,14 +119,14 @@ def generate_templates(skill_name, evaluation, context):
         try:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            print(f"❌ JSON Decode Error: {str(e)}")
-            print(f"Attempted to parse: {json_str[:200]}...")
+            logger.error(f"JSON Decode Error: {str(e)}")
+            logger.debug(f"Attempted to parse: {json_str[:200]}...")
             return None
     
-    print(f"❌ Could not find JSON object in response: {response[:200]}...")
+    logger.error(f"Could not find JSON object in response: {response[:200]}...")
     return None
 
-def parse_decision(evaluation_text):
+def parse_decision(evaluation_text: Optional[str]) -> str:
     """Regex pattern to match DECISION: [PROMOTE] or [REJECT] at the start of a line."""
     if evaluation_text is None:
         return "UNKNOWN"
@@ -135,7 +138,14 @@ def parse_decision(evaluation_text):
         return match.group(1).upper()
     return "UNKNOWN"
 
-def main():
+def atomic_write(path: Path, content: str) -> None:
+    """Atomic write using a temp file and rename pattern."""
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    temp_path.rename(path)
+
+def main() -> None:
     # Proactive Health Check
     if not check_environment():
         sys.exit(1)
@@ -150,69 +160,70 @@ def main():
     
     args = parser.parse_args()
     
-    print(f"🌉 Bridging '{args.skill}' from {args.source}...")
+    logger.info(f"🌉 Bridging '{args.skill}' from {args.source}...")
     
     context = extract_skill_data(args.source, args.skill)
     if not context:
-        print("❌ Could not find skill context in source.")
+        logger.error("Could not find skill context in source.")
         return
 
-    print("🧠 Evaluating utility with DeepSeek-R1...")
+    logger.info("🧠 Evaluating utility with DeepSeek-R1...")
     evaluation = evaluate_utility(args.skill, context)
     if evaluation is None:
-        print("❌ Ollama call failed during evaluation.")
+        logger.error("Ollama call failed during evaluation.")
         return
 
-    print("\n--- EVALUATION ---")
-    print(evaluation)
-    print("------------------\n")
+    logger.info("\n--- EVALUATION ---")
+    logger.info(evaluation)
+    logger.info("------------------\n")
     
     decision = parse_decision(evaluation)
     if decision == "REJECT" and not args.dry_run:
-        print("🛑 Skill rejected by evaluation. Use --force to override (not implemented).")
+        logger.warning("🛑 Skill rejected by evaluation. Use --force to override (not implemented).")
         return
     
     if decision == "UNKNOWN" and not args.dry_run:
-        print("⚠️ Could not determine decision from evaluation. Aborting for safety.")
+        logger.error("⚠️ Could not determine decision from evaluation. Aborting for safety.")
         return
 
     if args.dry_run:
-        print("✨ Dry run complete. No files written.")
+        logger.info("✨ Dry run complete. No files written.")
         return
 
-    print("📝 Generating production files...")
+    logger.info("📝 Generating production files...")
     templates = generate_templates(args.skill, evaluation, context)
     
     if not templates:
-        print("❌ Failed to generate templates.")
+        logger.error("Failed to generate templates.")
         return
 
     # Strict JSON Validation Gate
     is_valid, error_msg = validate_json_data(templates)
     if not is_valid:
-        print(f"❌ {error_msg}")
+        logger.error(error_msg)
         return
 
-    # Prepare paths
-    slug = args.skill.lower().replace(" ", "-")
-    skill_dir = GLOBAL_LIBRARY_PATH / "claude-skills" / slug
-    rule_dir = GLOBAL_LIBRARY_PATH / "cursor-rules" / slug
-    playbook_dir = GLOBAL_LIBRARY_PATH / "playbooks" / slug
+    # Prepare paths with traversal guards
+    slug = safe_slug(args.skill)
+    skill_dir = (GLOBAL_LIBRARY_PATH / "claude-skills" / slug).resolve()
+    rule_dir = (GLOBAL_LIBRARY_PATH / "cursor-rules" / slug).resolve()
+    playbook_dir = (GLOBAL_LIBRARY_PATH / "playbooks" / slug).resolve()
     
-    # Create directories
+    # Traversal Guard
+    global_lib_root = GLOBAL_LIBRARY_PATH.resolve()
     for d in [skill_dir, rule_dir, playbook_dir]:
+        if not d.is_relative_to(global_lib_root):
+            logger.error(f"Potential Path Traversal detected: {d}")
+            return
         d.mkdir(parents=True, exist_ok=True)
-        print(f"📁 Created {d}")
+        logger.info(f"📁 Verified directory {d}")
 
-    # Write files
-    with open(skill_dir / "SKILL.md", "w") as f:
-        f.write(templates["SKILL_MD"])
-    with open(rule_dir / "RULE.md", "w") as f:
-        f.write(templates["RULE_MD"])
-    with open(playbook_dir / "README.md", "w") as f:
-        f.write(templates["README_MD"])
+    # Atomic Writes
+    atomic_write(skill_dir / "SKILL.md", templates["SKILL_MD"])
+    atomic_write(rule_dir / "RULE.md", templates["RULE_MD"])
+    atomic_write(playbook_dir / "README.md", templates["README_MD"])
     
-    print(f"✅ Skill '{args.skill}' successfully promoted to production library!")
+    logger.info(f"✅ Skill '{args.skill}' successfully promoted to production library!")
 
 if __name__ == "__main__":
     main()

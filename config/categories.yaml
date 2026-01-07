@@ -1,0 +1,16 @@
+categories:
+  - id: ai_automation
+    name: "🤖 AI & Automation"
+    keywords: ["ai", "automation", "agent", "llm", "orchestration"]
+  - id: health_diet
+    name: "🥗 Health & Diet"
+    keywords: ["diet", "fat", "health", "nutrition", "workout"]
+  - id: content_strategy
+    name: "💡 Content Strategy & Business"
+    keywords: ["business", "strategy", "content", "marketing", "youtube"]
+  - id: development
+    name: "💻 Development & Engineering"
+    keywords: ["python", "code", "engineering", "software", "git"]
+default_category:
+  id: miscellaneous
+  name: "📦 Miscellaneous"

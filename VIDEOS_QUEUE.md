@@ -43,12 +43,21 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 
 <!-- Videos to analyze eventually -->
 
-- [ ] 
 
 
 ---
 
 ## Videos Analyzed
+- [x] **"The Only Claude Code Skill You Need"** by Aniket Panjwani
+  - **Date analyzed:** 2026-01-07
+  - **URL:** https://youtu.be/MMpaPV3KMFI?si=WTIxum75wOdEyJHk
+  - **Location:** `library/2026-01-07_Aniket_Panjwani_The-Only-Claude-Code-Skill-You-Need_MMpaPV3K.md`
+
+- [x] **"Claude Agent SDK [Full Workshop] — Thariq Shihipar, Anthropic"** by AI Engineer
+  - **Date analyzed:** 2026-01-07
+  - **URL:** https://youtu.be/TqC1qOfiVcQ?si=T_qkyvwFjuSOUN5z
+  - **Location:** `library/2026-01-05_AI_Engineer_Claude-Agent-SDK-Full-Workshop-Thariq-Sh_TqC1qOfi.md`
+
 - [x] **"Claude Code Skills vs MCPs: Complete Beginner's Guide 2026"** by Aniket Panjwani
   - **Date analyzed:** 2026-01-06
   - **URL:** https://youtu.be/42nz2FfKA9A?si=v5Cn0w_p4mm0HY0-

@@ -3,7 +3,20 @@ import subprocess
 import hashlib
 import re
 import shutil
+import logging
+import unicodedata
 from pathlib import Path
+from typing import Optional, Tuple, List
+
+# --- Logging Configuration ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("warden")
 
 # --- Configuration Centralization ---
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
@@ -15,7 +28,18 @@ SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
 # Health check cache to minimize CLI latency
 _OLLAMA_HEALTH_VERIFIED = False
 
-def check_ollama_health():
+def safe_slug(text: str) -> str:
+    """
+    Sanitizes text for use in file names and paths.
+    Uses unicodedata and re for robust cleaning.
+    """
+    # Normalize unicode characters
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    # Replace non-word characters with hyphens and lowercase
+    text = re.sub(r'[^\w\s-]', '', text).strip().lower()
+    return re.sub(r'[-\s]+', '-', text)
+
+def check_ollama_health() -> bool:
     """Health check for Ollama CLI responsiveness."""
     try:
         subprocess.run(["ollama", "list"], capture_output=True, check=True, timeout=5)
@@ -23,7 +47,7 @@ def check_ollama_health():
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
-def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 300) -> str:
+def run_ollama_command(prompt: str, system_prompt: Optional[str] = None, timeout: int = 300) -> str:
     """
     Standardized Ollama CLI wrapper.
     Standardizes all LLM calls to use the local Ollama CLI.
@@ -54,7 +78,7 @@ def run_ollama_command(prompt: str, system_prompt: str = None, timeout: int = 30
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
 
-def validate_json_data(data: dict | None) -> tuple:
+def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
     """Validate JSON data contains required keys for the global library."""
     required_keys = {"SKILL_MD", "RULE_MD", "README_MD"}
     if data is None or not isinstance(data, dict):
@@ -70,7 +94,7 @@ def create_temp_dir_name(url: str) -> str:
     url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
     return f"transcript_{url_hash}"
 
-def select_subtitle(filenames: list, base_name: str) -> str:
+def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
     """
     Select subtitle file from list of filenames, prioritizing manual over auto.
     Locale-agnostic regex to catch variants like .en-US.srt and .en-GB.srt.
@@ -104,31 +128,46 @@ def select_subtitle(filenames: list, base_name: str) -> str:
         
     return None
 
-def check_environment():
+def check_environment() -> bool:
     """
-    Proactive health check for critical dependencies.
+    Proactive health check for critical dependencies and paths.
+    Refuses to start if misconfigured.
     """
     global _OLLAMA_HEALTH_VERIFIED
     
     # Check yt-dlp
     if not shutil.which("yt-dlp"):
-        print("[!] Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
+        logger.error("Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
         return False
         
     # Check Ollama CLI
     if not shutil.which("ollama"):
-        print("[!] Critical: Ollama CLI not found in PATH. Install from https://ollama.com.")
+        logger.error("Critical: Ollama CLI not found in PATH. Install from https://ollama.com.")
         return False
         
     # Check Ollama Service responsiveness
     if not check_ollama_health():
-        print(f"[!] Critical: Ollama is not running. Start it with: ollama serve")
+        logger.error("Critical: Ollama is not running. Start it with: ollama serve")
         return False
     
+    # Check critical paths and writability
+    critical_paths = [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]
+    for path in critical_paths:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            # Test writability
+            test_file = path / ".warden_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception as e:
+            logger.error(f"Critical: Path {path} is not writable or cannot be created: {e}")
+            return False
+
     _OLLAMA_HEALTH_VERIFIED = True
+    logger.info("Environment check passed.")
     return True
 
-def initialize_directories():
+def initialize_directories() -> None:
     """
     Ensures all necessary directories exist.
     """

@@ -49,3 +49,10 @@
 - **Objective:** Maintain a persistent, searchable log of project-specific "lessons learned" to prevent repeating errors.
 - **Done Definition:** A system that automatically appends a "Pattern Learned" entry to a local history file after every successful Bridge promotion.
 - **Implementation:** A hook in `bridge.py` that writes to `library/00_HISTORY.md`.
+
+## 🛡️ Phase 4: Industrial-Grade Hardening (Post-Review)
+- [ ] **[CRITICAL] DNA Repair:** Replace absolute paths in `.cursorrules` with relative or parameterized references.
+- [ ] **[SECURITY] Dependency Pinning:** Update `requirements.txt` with specific versions.
+- [ ] **[STABILITY] Robust Indexing:** Refactor `scripts/librarian.py` to use structured data for index updates instead of string splits.
+- [ ] **[SCALE] Synthesis Map-Reduce:** Implement a tiered aggregation strategy in `scripts/synthesize.py` for large libraries.
+- [ ] **[QUALITY] Type Hardening:** Add complete type hints to `scripts/bridge.py` and `scripts/librarian.py`.

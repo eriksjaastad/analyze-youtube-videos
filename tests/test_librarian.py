@@ -1,6 +1,8 @@
 import pytest
 import subprocess
 import os
+import shutil
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from scripts.librarian import clean_srt, get_video_data
 from scripts.config import run_ollama_command
@@ -47,12 +49,6 @@ Line 2
 """
     cleaned = clean_srt(srt)
     # Deduplication across blocks
-    assert cleaned == "Line 1 Line 2 Line 3 Line 2" # Wait, Line 2 appears twice in different blocks.
-    # Actually clean_srt deduplicates consecutive lines.
-    # Block 1: Line 1, Line 1 -> Line 1
-    # Block 2: Line 2, Line 3 -> Line 2, Line 3
-    # Block 3: Line 2 -> Line 2
-    # Total: Line 1 Line 2 Line 3 Line 2
     assert "Line 1 Line 2 Line 3 Line 2" in cleaned
 
 @pytest.mark.parametrize("srt,expected", [
@@ -87,30 +83,27 @@ def test_run_ollama_command(mock_run):
         run_ollama_command("test prompt")
 
 @patch("subprocess.run")
-@patch("os.path.exists")
-@patch("os.rmdir")
-@patch("os.remove")
-@patch("os.listdir")
-def test_get_video_data_failure_cleanup(mock_listdir, mock_remove, mock_rmdir, mock_exists, mock_run):
-    """Verify that cleanup (os.rmdir) is called even if subprocess.run fails."""
+@patch("shutil.rmtree")
+@patch("pathlib.Path.exists")
+@patch("pathlib.Path.mkdir")
+def test_get_video_data_failure_cleanup(mock_mkdir, mock_exists, mock_rmtree, mock_run):
+    """Verify that cleanup (shutil.rmtree) is called even if subprocess.run fails."""
     mock_exists.return_value = True
     mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
-    mock_listdir.return_value = [] # No files to remove
     
     data = get_video_data("https://youtube.com/watch?v=fail")
     
     assert data is None
     # The finally block should still execute cleanup
-    assert mock_rmdir.called
+    assert mock_rmtree.called
 
 @patch("subprocess.run")
 @patch("os.listdir")
 @patch("builtins.open", new_callable=MagicMock)
-@patch("os.path.exists")
-@patch("os.makedirs")
-@patch("os.remove")
-@patch("os.rmdir")
-def test_get_video_data_success(mock_rmdir, mock_remove, mock_makedirs, mock_exists, mock_open, mock_listdir, mock_run):
+@patch("pathlib.Path.exists")
+@patch("pathlib.Path.mkdir")
+@patch("shutil.rmtree")
+def test_get_video_data_success(mock_rmtree, mock_mkdir, mock_exists, mock_open, mock_listdir, mock_run):
     mock_exists.return_value = True
     mock_run.side_effect = [
         # First call: metadata
@@ -129,12 +122,12 @@ def test_get_video_data_success(mock_rmdir, mock_remove, mock_makedirs, mock_exi
     assert "Hello" in data["transcript"]
     
     # Verify cleanup was called
-    assert mock_remove.called
-    assert mock_rmdir.called
+    assert mock_rmtree.called
 
 @patch("subprocess.run")
-def test_get_video_data_metadata_failure_simple(mock_run):
+@patch("shutil.rmtree")
+@patch("pathlib.Path.mkdir")
+def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_rmtree, mock_run):
     mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
     data = get_video_data("https://youtube.com/watch?v=fail")
     assert data is None
-

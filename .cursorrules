@@ -61,7 +61,7 @@ This directory contains an agent that analyzes YouTube channels and generates co
 
 This project references skills from the global agent-skills-library:
 
-**Skills Library Location:** `/Users/eriksjaastad/projects/agent-skills-library/`
+**Skills Library Location:** Configured in `.env` (`SKILLS_LIBRARY_PATH`)
 
 ### Primary Skill Used
 
