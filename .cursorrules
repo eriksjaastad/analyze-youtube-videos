@@ -205,3 +205,15 @@ All reports save to `reports/` directory in this project.
 
 *Part of Erik's project ecosystem - see project-scaffolding for patterns*
 
+
+---
+
+## 🛡️ Safety Rules
+
+### File Operations
+- **Trash, Don't Delete:** NEVER use `rm`, `os.remove`, `os.unlink`, or `shutil.rmtree` for permanent deletion.
+- ALWAYS use `send2trash` (Python) or move files to a `_trash/` directory.
+
+### Error Handling
+- **No Silent Failures:** NEVER swallow exceptions without logging.
+- ALWAYS log errors with context (file path, operation attempted, error message).
