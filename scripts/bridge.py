@@ -212,7 +212,8 @@ def main() -> None:
     # Traversal Guard
     global_lib_root = GLOBAL_LIBRARY_PATH.resolve()
     for d in [skill_dir, rule_dir, playbook_dir]:
-        if not d.is_relative_to(global_lib_root):
+        # Path validation: Explicit check that destination directory is valid and within whitelist
+        if not d.resolve().is_relative_to(global_lib_root):
             logger.error(f"Potential Path Traversal detected: {d}")
             return
         d.mkdir(parents=True, exist_ok=True)

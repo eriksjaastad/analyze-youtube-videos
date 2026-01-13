@@ -83,27 +83,31 @@ def test_run_ollama_command(mock_run):
         run_ollama_command("test prompt")
 
 @patch("subprocess.run")
-@patch("shutil.rmtree")
+@patch("tempfile.TemporaryDirectory")
 @patch("pathlib.Path.exists")
 @patch("pathlib.Path.mkdir")
-def test_get_video_data_failure_cleanup(mock_mkdir, mock_exists, mock_rmtree, mock_run):
-    """Verify that cleanup (shutil.rmtree) is called even if subprocess.run fails."""
+def test_get_video_data_failure_cleanup(mock_mkdir, mock_exists, mock_tempdir, mock_run):
+    """Verify that cleanup (tempfile.TemporaryDirectory) is used even if subprocess.run fails."""
     mock_exists.return_value = True
     mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
+    
+    # Mock context manager behavior
+    mock_temp_path = MagicMock()
+    mock_tempdir.return_value.__enter__.return_value = str(mock_temp_path)
     
     data = get_video_data("https://youtube.com/watch?v=fail")
     
     assert data is None
-    # The finally block should still execute cleanup
-    assert mock_rmtree.called
+    # Verify the context manager was entered
+    assert mock_tempdir.called
 
 @patch("subprocess.run")
 @patch("os.listdir")
 @patch("builtins.open", new_callable=MagicMock)
 @patch("pathlib.Path.exists")
 @patch("pathlib.Path.mkdir")
-@patch("shutil.rmtree")
-def test_get_video_data_success(mock_rmtree, mock_mkdir, mock_exists, mock_open, mock_listdir, mock_run):
+@patch("tempfile.TemporaryDirectory")
+def test_get_video_data_success(mock_tempdir, mock_mkdir, mock_exists, mock_open, mock_listdir, mock_run):
     mock_exists.return_value = True
     mock_run.side_effect = [
         # First call: metadata
@@ -111,6 +115,11 @@ def test_get_video_data_success(mock_rmtree, mock_mkdir, mock_exists, mock_open,
         # Second call: subtitles
         MagicMock(returncode=0, stdout="", stderr="")
     ]
+    
+    # Mock context manager behavior
+    mock_temp_path = "/tmp/fake_temp"
+    mock_tempdir.return_value.__enter__.return_value = mock_temp_path
+    
     mock_listdir.return_value = ["transcript.en.srt"]
     mock_open.return_value.__enter__.return_value.read.return_value = "1\n00:00:01,000 --> 00:00:02,000\nHello"
     
@@ -121,13 +130,24 @@ def test_get_video_data_success(mock_rmtree, mock_mkdir, mock_exists, mock_open,
     assert data["video_id"] == "123"
     assert "Hello" in data["transcript"]
     
-    # Verify cleanup was called
-    assert mock_rmtree.called
+    # Verify context manager was used
+    assert mock_tempdir.called
+
+    # Inverse Test Analysis:
+    # 1. We don't test the actual library file content generated (only its presence and metadata).
+    # 2. We don't test the Ollama prompt generation logic for synthesis.
+    # 3. We don't test the --dry-run flag behavior in these unit tests.
+    # 4. We don't test the actual yt-dlp binary output (only mocked responses).
 
 @patch("subprocess.run")
-@patch("shutil.rmtree")
+@patch("tempfile.TemporaryDirectory")
 @patch("pathlib.Path.mkdir")
-def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_rmtree, mock_run):
+def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_tempdir, mock_run):
     mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
+    
+    # Mock context manager behavior
+    mock_temp_path = "/tmp/fake_temp"
+    mock_tempdir.return_value.__enter__.return_value = mock_temp_path
+    
     data = get_video_data("https://youtube.com/watch?v=fail")
     assert data is None

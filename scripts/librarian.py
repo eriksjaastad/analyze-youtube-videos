@@ -1,5 +1,8 @@
 import os
+import os
 import sys
+import argparse
+import tempfile
 import json
 import subprocess
 import re
@@ -8,7 +11,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, create_temp_dir_name, select_subtitle, initialize_directories, safe_slug, logger
+from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, select_subtitle, initialize_directories, safe_slug, logger
 
 def atomic_write(path: Path, content: str) -> None:
     """Atomic write using a temp file and rename pattern."""
@@ -46,73 +49,75 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
     """
     Uses yt-dlp to fetch video metadata and SRT transcript.
     Prioritizes manual subtitles over auto-generated ones.
+    Uses tempfile.TemporaryDirectory for safe, automatic cleanup.
     """
-    unique_temp_name = create_temp_dir_name(url)
-    unique_temp = TEMP_DIR / unique_temp_name
-    unique_temp.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="transcript_") as temp_dir:
+        unique_temp = Path(temp_dir)
         
-    try:
-        logger.info(f"[*] Fetching metadata for: {url}")
-        
-        cmd_info = [
-            "yt-dlp",
-            "--skip-download",
-            "--print-json",
-            url
-        ]
-        result = subprocess.run(cmd_info, capture_output=True, text=True)
-        if result.returncode != 0:
-            logger.error(f"Error fetching metadata: {result.stderr}")
+        try:
+            logger.info(f"[*] Fetching metadata for: {url}")
+            
+            cmd_info = [
+                "yt-dlp",
+                "--skip-download",
+                "--print-json",
+                url
+            ]
+            result = subprocess.run(cmd_info, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                logger.error(f"Error fetching metadata: {result.stderr}")
+                return None
+            
+            metadata = json.loads(result.stdout)
+            
+            logger.info("[*] Fetching manual and auto-subtitles...")
+            sub_path_base = str(unique_temp / "transcript")
+            cmd_subs = [
+                "yt-dlp",
+                "--skip-download",
+                "--write-subs",
+                "--write-auto-subs",
+                "--sub-lang", "en",
+                "--sub-format", "srt",
+                "--output", sub_path_base,
+                url
+            ]
+            sub_result = subprocess.run(cmd_subs, capture_output=True, text=True, timeout=120)
+            if sub_result.returncode != 0:
+                logger.warning(f"Subtitle fetch command failed for {url}.")
+                logger.debug(f"Stderr: {sub_result.stderr}")
+            
+            srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
+            transcript = ""
+            target_file = select_subtitle(srt_files, "transcript")
+                
+            if target_file:
+                target_path = unique_temp / target_file
+                with open(target_path, 'r', encoding='utf-8') as f:
+                    srt_content = f.read()
+                    transcript = clean_srt(srt_content)
+            else:
+                logger.warning("No SRT transcript found.")
+                
+            return {
+                "title": metadata.get("title") or "Untitled",
+                "channel": metadata.get("uploader") or "Unknown_Channel",
+                "date": metadata.get("upload_date"),
+                "url": url,
+                "video_id": metadata.get("id") or "unknown",
+                "description": metadata.get("description") or "",
+                "transcript": transcript,
+                "tags": metadata.get("tags", []) or [],
+                "view_count": metadata.get("view_count") or 0,
+                "like_count": metadata.get("like_count") or 0,
+                "duration_string": metadata.get("duration_string") or "0:00"
+            }
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"Subprocess timed out: {e}")
             return None
-        
-        metadata = json.loads(result.stdout)
-        
-        logger.info("[*] Fetching manual and auto-subtitles...")
-        sub_path_base = str(unique_temp / "transcript")
-        cmd_subs = [
-            "yt-dlp",
-            "--skip-download",
-            "--write-subs",
-            "--write-auto-subs",
-            "--sub-lang", "en",
-            "--sub-format", "srt",
-            "--output", sub_path_base,
-            url
-        ]
-        sub_result = subprocess.run(cmd_subs, capture_output=True, text=True)
-        if sub_result.returncode != 0:
-            logger.warning(f"Subtitle fetch command failed for {url}.")
-            logger.debug(f"Stderr: {sub_result.stderr}")
-        
-        srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
-        transcript = ""
-        target_file = select_subtitle(srt_files, "transcript")
-            
-        if target_file:
-            target_path = unique_temp / target_file
-            with open(target_path, 'r', encoding='utf-8') as f:
-                srt_content = f.read()
-                transcript = clean_srt(srt_content)
-        else:
-            logger.warning("No SRT transcript found.")
-            
-        return {
-            "title": metadata.get("title") or "Untitled",
-            "channel": metadata.get("uploader") or "Unknown_Channel",
-            "date": metadata.get("upload_date"),
-            "url": url,
-            "video_id": metadata.get("id") or "unknown",
-            "description": metadata.get("description") or "",
-            "transcript": transcript,
-            "tags": metadata.get("tags", []) or [],
-            "view_count": metadata.get("view_count") or 0,
-            "like_count": metadata.get("like_count") or 0,
-            "duration_string": metadata.get("duration_string") or "0:00"
-        }
-    finally:
-        # Temp Dir Leak Fix: Always cleanup the unique temp directory
-        if unique_temp.exists():
-            shutil.rmtree(unique_temp)
+        except Exception as e:
+            logger.error(f"Unexpected error in get_video_data: {e}")
+            return None
 
 def analyze_with_ollama(data: Dict[str, Any]) -> Optional[str]:
     """
@@ -327,11 +332,12 @@ def main() -> None:
     # Initialize Directories
     initialize_directories()
 
-    if len(sys.argv) < 2:
-        logger.info("Usage: python scripts/librarian.py [YouTube URL]")
-        sys.exit(1)
-        
-    url = sys.argv[1]
+    parser = argparse.ArgumentParser(description="The Librarian: Extract and analyze YouTube transcripts.")
+    parser.add_argument("url", help="YouTube URL to analyze")
+    parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show analysis")
+    
+    args = parser.parse_args()
+    url = args.url
 
     # URL Guard: Regex check for valid YouTube URL
     youtube_regex = re.compile(
@@ -351,6 +357,13 @@ def main() -> None:
         logger.error("CRITICAL ERROR: Analysis failed. Aborting to prevent library corruption.")
         sys.exit(1)
         
+    if args.dry_run:
+        logger.info("--- DRY RUN: Analysis Report ---")
+        logger.info(analysis)
+        logger.info("--------------------------------")
+        logger.info("✨ Dry run complete. No files written.")
+        return
+
     date_str = data.get('date')
     if date_str and len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
