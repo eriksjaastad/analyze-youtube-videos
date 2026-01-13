@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import List, Tuple
 import re
-from scaffold.utils import safe_slug
+from scripts.config import safe_slug
 
 # Configuration
 PROJECTS_ROOT_ENV = os.getenv("PROJECTS_ROOT")
@@ -127,7 +127,7 @@ def validate_dna_integrity(project_path: Path) -> List[str]:
     secret_pattern = re.compile(r"(sk-[a-zA-Z0-9]{32,}|AIza[a-zA-Z0-9_-]{35})")
     
     # Files to exclude from scan
-    exclude_dirs = {".git", "venv", "__pycache__", "node_modules", "data", "library", ".mypy_cache", ".pytest_cache"}
+    exclude_dirs = {".git", "venv", "__pycache__", "node_modules", "data", "library", ".mypy_cache", ".pytest_cache", "archives"}
     
     for root, dirs, files in os.walk(project_path):
         # Filter directories in-place

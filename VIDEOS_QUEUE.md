@@ -37,7 +37,7 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ### Priority Queue
 
 <!-- Add new video URLs here -->
-
+https://youtu.be/B-UXpneKw6M?si=XeC9WDqV_ae-2UKX
 
 ### Backlog
 

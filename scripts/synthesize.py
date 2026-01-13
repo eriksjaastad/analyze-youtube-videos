@@ -138,6 +138,7 @@ def main() -> None:
     parser.add_argument("--topic", default="AI Orchestration & Automation", help="The topic name for the synthesis report.")
     parser.add_argument("--category", help="Optional category filter (e.g., ai, diet).")
     parser.add_argument("--output", help="Custom output filename in the synthesis/ directory.")
+    parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show synthesis")
     
     args = parser.parse_args()
 
@@ -150,6 +151,13 @@ def main() -> None:
     synthesis_report = synthesize_knowledge(aggregated_text, args.topic)
 
     if synthesis_report:
+        if args.dry_run:
+            logger.info("--- DRY RUN: Synthesis Report ---")
+            logger.info(synthesis_report)
+            logger.info("---------------------------------")
+            logger.info("✨ Dry run complete. No files written.")
+            return
+
         # Generate filename
         timestamp = datetime.now().strftime("%Y-%m-%d")
         safe_topic = safe_slug(args.topic)

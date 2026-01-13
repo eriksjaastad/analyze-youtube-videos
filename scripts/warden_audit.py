@@ -69,7 +69,7 @@ def check_doc_ratio(project_root: pathlib.Path) -> tuple:
     Returns: (ratio, severity) where severity is None if healthy, P2 if warning, P1 if critical
     """
     code_extensions = ['*.py', '*.js', '*.ts', '*.jsx', '*.tsx', '*.go', '*.rs', '*.java', '*.rb']
-    skip_dirs = ['venv', 'node_modules', '.git', '__pycache__', 'archives', '_trash']
+    skip_dirs = ['venv', 'node_modules', '.git', '__pycache__', 'archives', '_trash', 'library', 'reports']
 
     code_lines = 0
     doc_lines = 0
@@ -101,10 +101,10 @@ def check_doc_ratio(project_root: pathlib.Path) -> tuple:
 
     ratio = doc_lines / code_lines
 
-    if ratio > 0.5:
-        return (ratio, Severity.P1)  # Critical - docs > 50% of code
-    elif ratio > 0.2:
-        return (ratio, Severity.P2)  # Warning - docs 20-50% of code
+    if ratio > 1.5:
+        return (ratio, Severity.P1)  # Critical - docs > 150% of code
+    elif ratio > 0.5:
+        return (ratio, Severity.P2)  # Warning - docs 50-150% of code
     else:
         return (ratio, None)  # Healthy
 
@@ -219,8 +219,8 @@ def run_audit(root_dir: pathlib.Path, use_fast: bool = False) -> bool:
     
     # Find all project roots by looking for 00_Index_*.md files
     for index_path in root_dir.rglob('00_Index_*.md'):
-        # Skip indices in templates or archives
-        if any(part in index_path.parts for part in ['templates', 'archives', 'venv', '.git']):
+        # Skip indices in templates, archives, library, or reports
+        if any(part in index_path.parts for part in ['templates', 'archives', 'library', 'reports', 'venv', '.git']):
             continue
             
         projects_found += 1

@@ -73,9 +73,11 @@ def run_ollama_command(prompt: str, system_prompt: Optional[str] = None, timeout
         # Strip DeepSeek-R1 internal monologue
         return re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
         
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Ollama command timed out after {timeout} seconds: {e}")
         raise RuntimeError(f"Ollama command timed out after {timeout} seconds.")
     except subprocess.CalledProcessError as e:
+        logger.error(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
         raise RuntimeError(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
 
 def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:

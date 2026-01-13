@@ -51,6 +51,8 @@
 - **Implementation:** A hook in `bridge.py` that writes to `library/00_HISTORY.md`.
 
 ## 🛡️ Phase 4: Industrial-Grade Hardening (Post-Review)
+
+- [ ] **Flat Root Transition:** Move contents of `Documents/core/` to `Documents/` root and delete the core directory.
 - [ ] **[CRITICAL] DNA Repair:** Replace absolute paths in `.cursorrules` with relative or parameterized references.
 - [ ] **[SECURITY] Dependency Pinning:** Update `requirements.txt` with specific versions.
 - [ ] **[STABILITY] Robust Indexing:** Refactor `scripts/librarian.py` to use structured data for index updates instead of string splits.
