@@ -37,7 +37,6 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ### Priority Queue
 
 <!-- Add new video URLs here -->
-https://youtu.be/B-UXpneKw6M?si=XeC9WDqV_ae-2UKX
 
 ### Backlog
 
@@ -48,6 +47,16 @@ https://youtu.be/B-UXpneKw6M?si=XeC9WDqV_ae-2UKX
 ---
 
 ## Videos Analyzed
+- [x] **"Agentic Design Systems in 2026 with Brad Frost"** by Chromatic
+  - **Date analyzed:** 2026-01-13
+  - **URL:** https://youtu.be/Vg78K3t9KYc?si=iODz3nDW3BDXhCzu
+  - **Location:** `library/2025-12-11_chromatic_agentic-design-systems-in-2026-with-brad_vg78k3t9.md`
+
+- [x] **"Claude Code's Creator Does This Before Every Single Project"** by AI LABS
+  - **Date analyzed:** 2026-01-13
+  - **URL:** https://youtu.be/B-UXpneKw6M?si=XeC9WDqV_ae-2UKX
+  - **Location:** `library/2026-01-09_ai-labs_claude-codes-creator-does-this-before-ev_b-uxpnek.md`
+
 - [x] **"The Only Claude Code Skill You Need"** by Aniket Panjwani
   - **Date analyzed:** 2026-01-07
   - **URL:** https://youtu.be/MMpaPV3KMFI?si=WTIxum75wOdEyJHk

@@ -118,16 +118,15 @@ Think of it like:
 analyze-youtube-videos/
 ├── .cursorrules               ← You are here
 ├── README.md                  ← Agent description
-├── data/                      ← Downloaded channel data
-│   └── Nick Saraev/
-│       ├── transcript.en.vtt
-│       └── YouTube_Analysis_Methodology.md
-├── reports/                   ← Generated analysis reports
-│   ├── 01-descriptive-analytics.md
-│   ├── 02-pattern-recognition.md
-│   ├── 03-strategic-synthesis.md
-│   └── 04-content-roadmap.md
-└── youtube_data.db            ← SQLite database (when created)
+├── scripts/                   ← Tier 1 Core Agents
+│   ├── librarian.py           ← Data ingestion & cleaning
+│   ├── synthesize.py          ← Strategy aggregation
+│   └── bridge.py              ← Skill promotion
+├── library/                   ← Knowledge Library
+│   ├── 00_Index_Library.md    ← Knowledge Map
+│   └── index.yaml             ← Source of Truth
+├── synthesis/                 ← Master Strategy Reports
+└── tests/                     ← Production Test Harness
 ```
 
 ---

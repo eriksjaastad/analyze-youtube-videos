@@ -1,134 +1,94 @@
-# YouTube Analysis Agent
+# 📚 YouTube Analysis Agent
 
-> **Agent + Skill Combination**
+> **Status: Production Ready (Gold Standard Certified)**  
+> **Scaffolding Version: 1.0.0**
 
-This directory contains an autonomous agent that analyzes YouTube videos and channels, using skills from the agent-skills-library.
-
----
-
-## Architecture
-
-This agent is composed of:
-
-1. **Agent-Specific Rules** (this directory)
-   - Agent configuration
-   - YouTube-specific workflows
-   - Data processing logic
-   - Output formatting
-
-2. **Reusable Skills** (references agent-skills-library)
-   - Content analysis skill → `agent-skills-library/playbooks/content-analysis/`
-   - Pattern detection skill → `agent-skills-library/playbooks/pattern-detection/`
-   - Report generation skill → `agent-skills-library/playbooks/report-generation/`
+Autonomous agent system for analyzing YouTube content and extracting strategic insights. This system follows the eriksjaastad industrial hardening standards and utilizes a tiered agent architecture to ingest, analyze, and synthesize video data.
 
 ---
 
-## Pattern: Agent vs. Skill
+## 🏗️ Architecture
 
-**Agent (this directory):**
-- Has a specific job: "Analyze YouTube content"
-- Combines multiple skills
-- Has specific inputs/outputs
-- May have state/memory
-- Lives in its own directory
+This agent uses a specialized three-tier architecture:
 
-**Skill (in agent-skills-library):**
-- Reusable capability: "Analyze patterns in content"
-- Tool-agnostic instructions
-- Can be used by many agents
-- Lives in skills library
-
-**Analogy:** 
-- **Agent** = Employee with a specific job
-- **Skills** = Capabilities that employee uses
+1. **The Librarian (`scripts/librarian.py`)**: Responsible for data ingestion. It downloads transcripts, cleans data, and maintains the `library/` index.
+2. **The Strategist (`scripts/synthesize.py`)**: Responsible for synthesis. It aggregates multiple library entries into a "Master Strategy" in the `synthesis/` directory.
+3. **The Bridge (`scripts/bridge.py`)**: Responsible for skill promotion. It identifies high-value patterns and promotes them to the global `agent-skills-library`.
 
 ---
 
-## Current Status
+## 🛡️ Industrial Hardening
 
-### Existing Content:
-- `Nick Saraev/transcript.en.vtt` - Example transcript
-- `Nick Saraev/YouTube_Analysis_Methodology.md` - Analysis approach
-
-### To Be Developed:
-
-**Phase 1: Extract Skills**
-- [ ] Identify reusable analysis patterns
-- [ ] Create playbooks in agent-skills-library:
-  - [ ] `playbooks/video-content-analysis/`
-  - [ ] `playbooks/engagement-pattern-detection/`
-  - [ ] `playbooks/content-idea-generation/`
-
-**Phase 2: Build Agent**
-- [ ] Agent configuration (YAML/JSON)
-- [ ] YouTube-specific workflows
-- [ ] Reference skills from library
-- [ ] Input/output handling
-
-**Phase 3: Test & Iterate**
-- [ ] Test with multiple channels
-- [ ] Refine skills based on results
-- [ ] Version skills properly
+This project is certified under the **Gold Standard** governance protocol:
+- **Atomic Writes**: All file modifications use temp-file-and-rename for crash safety.
+- **Path Safety**: Strict traversal guards and `safe_slug` sanitization on all user-provided strings.
+- **Subprocess Integrity**: All external calls (yt-dlp, ollama) have mandatory timeouts and non-zero exit code checks.
+- **Safety-First Operations**: Uses `tempfile.TemporaryDirectory` for safe cleanup of temporary assets.
 
 ---
 
-## When to Use This Agent
-
-**Use this agent when:**
-- Analyzing YouTube channels for content patterns
-- Generating video ideas based on successful content
-- Understanding engagement patterns
-- Competitive content analysis
-
-**Don't use this agent for:**
-- General content analysis (use the skills directly)
-- Non-YouTube content (adapt or create different agent)
-
----
-
-## Example Workflow
-
-```
-User Request:
-"Analyze Nick Saraev's channel for content patterns"
-
-Agent Flow:
-1. Load transcript/metadata
-2. Apply content-analysis skill (from library)
-3. Apply pattern-detection skill (from library)
-4. Use YouTube-specific context
-5. Apply report-generation skill (from library)
-6. Output formatted analysis
-```
-
----
-
-## Directory Structure (Planned)
+## 📂 Project Structure
 
 ```
 analyze-youtube-videos/
-├── README.md                    ← You are here
-├── agent-config.yaml            ← Agent configuration
-├── workflows/
-│   ├── channel-analysis.md
-│   └── video-comparison.md
-├── data/                        ← Input data
-│   └── Nick Saraev/
-│       ├── transcript.en.vtt
-│       └── YouTube_Analysis_Methodology.md
-└── outputs/                     ← Generated reports
-    └── [analysis results]
+├── scripts/                   ← Tier 1 Core Agents
+│   ├── librarian.py           ← Data ingestion & cleaning
+│   ├── synthesize.py          ← Strategy aggregation
+│   └── bridge.py              ← Skill promotion
+│   └── config.py              ← Centralized config & health checks
+├── library/                   ← Knowledge Library
+│   ├── 00_Index_Library.md    ← Knowledge Map
+│   └── index.yaml             ← Source of Truth (YAML)
+├── synthesis/                 ← Master Strategy Reports
+├── tests/                     ← Unit tests & cleanup verification
+├── requirements.txt           ← Pinned production dependencies
+└── 00_Index_analyze-youtube-videos.md ← Project Index
 ```
 
 ---
 
-## Related
+## 🚀 Workflow
 
-- **Skills Library:** `/agent-skills-library/` - Reusable analysis skills
-- **AI Training Lab:** `/AI agent training lab/` - Agent orchestration testing
+### Step 1: Ingest & Analyze
+```bash
+python3 scripts/librarian.py "https://www.youtube.com/watch?v=..."
+```
+The Librarian downloads the transcript, cleans it, and uses local AI (DeepSeek-R1 via Ollama) to generate a deep-dive report in `library/`.
+
+### Step 2: Synthesize Strategy
+```bash
+python3 scripts/synthesize.py --topic "AI Orchestration"
+```
+The Strategist aggregates all relevant reports in the library into a cohesive "Master Strategy" document.
+
+### Step 3: Promote Skills
+```bash
+python3 scripts/bridge.py --source synthesis/2026-01-12_ai-orchestration.md --skill "Pattern Detection"
+```
+The Bridge evaluates patterns and promotes them to the global skills library.
 
 ---
 
-*Created: December 29, 2024*  
-*Status: Planning phase - skills need to be extracted to library first*
+## 🧪 Testing
 
+Run the full test suite to verify system integrity:
+```bash
+pytest tests/
+```
+
+Before committing or pushing, run the pre-review scan:
+```bash
+bash scripts/pre_review_scan.sh
+```
+
+---
+
+## 📝 Related Documentation
+
+- **Ecosystem Standards**: `Documents/REVIEWS_AND_GOVERNANCE_PROTOCOL.md`
+- **Methodology**: `Documents/core/YouTube_Analysis_Methodology.md`
+- **Skills Library**: Configured via `SKILLS_LIBRARY_PATH` env var.
+
+---
+*Last Updated: January 2026*  
+*Part of the eriksjaastad ecosystem.*
