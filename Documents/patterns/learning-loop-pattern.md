@@ -385,3 +385,18 @@ If no → New learning discovered. Document and reinforce.
 ---
 
 *This pattern provides guidance, not prescription. Adapt it to your project's needs. The goal is closing the gap between "we learned something" and "we apply what we learned."*
+
+## Related Documentation
+
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+- [[automation_patterns]] - automation
+- [[cost_management]] - cost management
+- [[prompt_engineering_guide]] - prompt engineering
+- [[queue_processing_guide]] - queue/workflow
+- [[ai_model_comparison]] - AI models
+- [[case_studies]] - examples
+- [[data_quality_patterns]] - data quality
+- [[performance_optimization]] - performance
+- [[security_patterns]] - security
+- [[project-scaffolding/README]] - Project Scaffolding

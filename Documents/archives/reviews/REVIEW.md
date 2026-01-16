@@ -168,3 +168,9 @@ There are no remaining issues. Not even style nits.
 ---
 
 *Review complete. 0 issues. Gold standard achieved.*
+
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+

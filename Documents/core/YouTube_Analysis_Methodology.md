@@ -434,3 +434,16 @@ This isn't just "watch videos and take notes." This is:
 ✅ **Reusable** - Build once, run multiple times
 
 This turns competitive research from a weeks-long manual process into a few hours of automated analysis with AI.
+
+## Related Documentation
+
+- [[automation_patterns]] - automation
+- [[database_schema]] - database design
+- [[database_setup]] - database
+- [[ai_model_comparison]] - AI models
+- [[case_studies]] - examples
+- [[performance_optimization]] - performance
+- [[research_methodology]] - research
+- [[video_analysis_tools]] - video analysis
+- [[agent-skills-library/README]] - Agent Skills
+- [[analyze-youtube-videos/README]] - YouTube Analyzer

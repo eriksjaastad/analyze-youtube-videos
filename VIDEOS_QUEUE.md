@@ -35,7 +35,6 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ## Videos To Analyze
 
 ### Priority Queue
-
 <!-- Add new video URLs here -->
 
 ### Backlog
@@ -47,6 +46,11 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
+- [x] **"DON'T build AI automations, build agentic workflows! (Google Antigravity)"** by Duncan Rogoff | AI Automation
+  - **Date analyzed:** 2026-01-16
+  - **URL:** https://youtu.be/7U6pKex9tbE?si=H-NeavipzSjKwy8n
+  - **Location:** `library/2026-01-05_duncan-rogoff-ai-automation_dont-build-ai-automations-build-agentic-_7u6pkex9.md`
+
 - [x] **"Agentic Design Systems in 2026 with Brad Frost"** by Chromatic
   - **Date analyzed:** 2026-01-13
   - **URL:** https://youtu.be/Vg78K3t9KYc?si=iODz3nDW3BDXhCzu
@@ -175,3 +179,12 @@ data/
 
 *Just paste a YouTube URL and say "add this to the queue" or "analyze this video"*
 
+## Related Documentation
+
+- [[automation_patterns]] - automation
+- [[prompt_engineering_guide]] - prompt engineering
+- [[queue_processing_guide]] - queue/workflow
+- [[ai_model_comparison]] - AI models
+- [[testing_strategy]] - testing/QA
+- [[video_analysis_tools]] - video analysis
+- [[analyze-youtube-videos/README]] - YouTube Analyzer

@@ -522,3 +522,17 @@ Things to try or investigate:
 ---
 
 *This is a living document. Update it when you learn something new about local models.*
+
+## Related Documentation
+
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+- [[cost_management]] - cost management
+- [[prompt_engineering_guide]] - prompt engineering
+- [[ai_model_comparison]] - AI models
+- [[case_studies]] - examples
+- [[orchestration_patterns]] - orchestration
+- [[performance_optimization]] - performance
+- [[security_patterns]] - security
+- [[testing_strategy]] - testing/QA
+- [[project-tracker/README]] - Project Tracker

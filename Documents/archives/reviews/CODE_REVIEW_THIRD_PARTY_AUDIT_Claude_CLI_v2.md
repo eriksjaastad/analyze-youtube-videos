@@ -3,7 +3,7 @@
 **Audit Date:** 2026-01-07
 **Auditor:** Claude Code CLI (Third-Party Review)
 **Project Version:** v8 (Gold Standard Certification)
-**Repository:** `/Users/eriksjaastad/projects/analyze-youtube-videos`
+**Repository:** `[USER_HOME]/projects/analyze-youtube-videos`
 **Total LOC:** ~805 (core scripts)
 
 ---
@@ -78,13 +78,13 @@ CREATE TABLE library_entries (
 
 ### Issue 2: Hardcoded Absolute Paths Reduce Portability
 **Severity:** Medium
-**Problem:** The `.env.example` file contains hardcoded absolute paths (`/Users/eriksjaastad/projects/agent-skills-library/`), making the project non-portable across machines or users.
+**Problem:** The `.env.example` file contains hardcoded absolute paths (`[USER_HOME]/projects/agent-skills-library/`), making the project non-portable across machines or users.
 
 **Location:** `.env.example:11`
 
 **Code:**
 ```bash
-SKILLS_LIBRARY_PATH=/Users/eriksjaastad/projects/agent-skills-library/
+SKILLS_LIBRARY_PATH=[USER_HOME]/projects/agent-skills-library/
 ```
 
 **Consequences:**
@@ -1154,3 +1154,12 @@ This audit was conducted using:
 **End of Third-Party Audit**
 
 *Audit conducted by Claude Code CLI v2 on 2026-01-07*
+
+
+## Related Documentation
+
+- [[CODE_QUALITY_STANDARDS]] - code standards
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+

@@ -190,3 +190,11 @@ The codebase will be cleared for production once the P0 issue is resolved and Ga
 ---
 
 *Review complete. 1 critical issue (unresolved), 1 warning (unresolved). Awaiting remediation.*
+
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+

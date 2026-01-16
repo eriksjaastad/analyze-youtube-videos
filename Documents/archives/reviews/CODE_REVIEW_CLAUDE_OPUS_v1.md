@@ -211,3 +211,11 @@ Once Issue #1 is fixed and the pre-review scan passes, this codebase will be rea
 ---
 
 *Review complete. 1 critical issue, 1 warning. Remediation required.*
+
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+

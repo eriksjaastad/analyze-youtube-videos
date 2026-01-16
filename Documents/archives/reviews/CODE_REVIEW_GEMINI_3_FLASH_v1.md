@@ -24,7 +24,7 @@ The "Analyze YouTube Videos" project is a well-structured experiment utilizing l
 
 | ID | Check | Status | Evidence |
 | :--- | :--- | :--- | :--- |
-| **0.1** | **Hardcoded Paths** | ❌ **FAIL** | `.cursorrules:64` uses absolute path: `/Users/eriksjaastad/projects/agent-skills-library/` |
+| **0.1** | **Hardcoded Paths** | ❌ **FAIL** | `.cursorrules:64` uses absolute path: `[USER_HOME]/projects/agent-skills-library/` |
 | **0.2** | **Secrets Check** | ✅ **PASS** | `grep` scan found no `sk-` or `AIza` keys. |
 | **0.3** | **Silent Exceptions** | ⚠️ **WARN** | `scripts/bridge.py:12` uses generic `except Exception` which logs but may swallow logic. |
 | **0.4** | **Dependency Safety** | ❌ **FAIL** | `requirements.txt` contains zero version pinning (e.g., `yt-dlp` instead of `yt-dlp==2025.1.5`). |
@@ -74,7 +74,7 @@ The current test suite (`tests/`) covers basic functionality but misses these cr
    *   **Proposed Change for `.cursorrules`:**
        ```markdown
        # Old:
-       **Skills Library Location:** `/Users/eriksjaastad/projects/agent-skills-library/`
+       **Skills Library Location:** `[USER_HOME]/projects/agent-skills-library/`
        
        # New (Portable):
        **Skills Library Location:** `../agent-skills-library/` (Assumes sibling directory structure)
@@ -87,4 +87,10 @@ The current test suite (`tests/`) covers basic functionality but misses these cr
 ---
 **Audit Authorized by:** Gemini 3 Flash (AI Architect)  
 **Strategic Alignment:** Ecosystem Hardening
+
+
+## Related Documentation
+
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
 

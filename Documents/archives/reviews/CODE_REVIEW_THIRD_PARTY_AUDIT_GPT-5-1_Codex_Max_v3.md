@@ -182,3 +182,10 @@ pytest-mock
 
 *This review follows the v1.1 Ecosystem Governance & Review Protocol.*
 
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+

@@ -25,9 +25,9 @@ The **analyze-youtube-videos** project is a sophisticated knowledge extraction a
 #### `.env` Configuration File
 - [x] Contains **CRITICAL ISSUE**: Hardcoded absolute path
   ```bash
-  SKILLS_LIBRARY_PATH=/Users/eriksjaastad/projects/agent-skills-library/
+  SKILLS_LIBRARY_PATH=[USER_HOME]/projects/agent-skills-library/
   ```
-  **Evidence:** `grep -r "/Users/eriksjaastad" .env`
+  **Evidence:** `grep -r "[USER_HOME]" .env`
   **Impact:** Non-portable; fails on any machine without exact same user/path structure
   **Blast Radius:** HIGH - Any developer attempting to use this project will experience immediate failures
 
@@ -484,11 +484,11 @@ data = json.loads(json_str)
 ### Ship Blockers (Must Fix Before Propagation)
 
 1. **CRITICAL: Hardcoded Absolute Path**
-   - **Location:** `.env` line 10 - `SKILLS_LIBRARY_PATH=/Users/eriksjaastad/...`
+   - **Location:** `.env` line 10 - `SKILLS_LIBRARY_PATH=[USER_HOME]/...`
    - **Impact:** Non-portable; fails on any other machine
    - **Fix:** Use relative path or environment-relative (e.g., `../agent-skills-library/`)
    - **Effort:** 5 minutes
-   - **Evidence:** `grep -r "/Users/eriksjaastad" .env` returns match
+   - **Evidence:** `grep -r "[USER_HOME]" .env` returns match
 
 2. **HIGH: No Dependency Version Pinning**
    - **Location:** `requirements.txt`
@@ -578,7 +578,7 @@ data = json.loads(json_str)
 
 | Standard | Status | Evidence |
 |----------|--------|----------|
-| No hardcoded paths | ❌ FAIL | .env contains `/Users/eriksjaastad/` |
+| No hardcoded paths | ❌ FAIL | .env contains `[USER_HOME]/` |
 | No hardcoded secrets | ✅ PASS | No API keys found in code |
 | No silent failures | ✅ PASS | All critical paths raise errors |
 | Subprocess integrity | ✅ PASS | `check=True`, `timeout`, `capture_output` used |
@@ -699,3 +699,12 @@ This project is ready to transition from Phase 3 (Prototyping) to Phase 4 (Harde
 *This review follows the Ecosystem Governance & Review Protocol v1.2*
 *Review Standard: CODE_REVIEW_* naming convention for dashboard tracking*
 *Audit Type: Third-Party Independent Assessment*
+
+
+## Related Documentation
+
+- [[CODE_QUALITY_STANDARDS]] - code standards
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+

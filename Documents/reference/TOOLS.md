@@ -121,3 +121,10 @@ yt-dlp \
 
 *Part of analyze-youtube-videos workflow - see .cursorrules for full process*
 
+## Related Documentation
+
+- [[database_setup]] - database
+- [[queue_processing_guide]] - queue/workflow
+- [[case_studies]] - examples
+- [[video_analysis_tools]] - video analysis
+- [[analyze-youtube-videos/README]] - YouTube Analyzer

@@ -29,7 +29,7 @@ This project is certified under the **Gold Standard** governance protocol:
 
 ## 📂 Project Structure
 
-```
+```bash
 analyze-youtube-videos/
 ├── scripts/                   ← Tier 1 Core Agents
 │   ├── librarian.py           ← Data ingestion & cleaning
@@ -51,13 +51,13 @@ analyze-youtube-videos/
 
 ### Step 1: Ingest & Analyze
 ```bash
-python3 scripts/librarian.py "https://www.youtube.com/watch?v=..."
+doppler run -- python3 scripts/librarian.py "https://www.youtube.com/watch?v=..."
 ```
 The Librarian downloads the transcript, cleans it, and uses local AI (DeepSeek-R1 via Ollama) to generate a deep-dive report in `library/`.
 
 ### Step 2: Synthesize Strategy
 ```bash
-python3 scripts/synthesize.py --topic "AI Orchestration"
+doppler run -- python3 scripts/synthesize.py --topic "AI Orchestration"
 ```
 The Strategist aggregates all relevant reports in the library into a cohesive "Master Strategy" document.
 
@@ -92,3 +92,48 @@ bash scripts/pre_review_scan.sh
 ---
 *Last Updated: January 2026*  
 *Part of the eriksjaastad ecosystem.*
+
+
+<!-- project-scaffolding template appended -->
+
+# [PROJECT_NAME]
+
+[Brief 2-3 sentence description of the project.]
+
+## Quick Start
+
+### Installation
+```bash
+# [Add installation steps here]
+```
+
+### Usage
+```bash
+# [Add usage steps here]
+```
+
+## Documentation
+See the `Documents/` directory for detailed documentation:
+- [Architecture Overview](Documents/ARCHITECTURE_OVERVIEW.md)
+- [Operations Guide](Documents/OPERATIONS_GUIDE.md)
+
+## Development Resources
+- [[analyze-youtube-videos/tests/__init__.py|__init__.py]]
+- [[analyze-youtube-videos/scripts/warden_audit.py|warden_audit.py]]
+
+## Status
+- **Current Phase:** [Phase Name]
+- **Status:** #status/active
+
+## Related Documentation
+
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+- [[architecture_patterns]] - architecture
+- [[queue_processing_guide]] - queue/workflow
+- [[testing_strategy]] - testing/QA
+- [[video_analysis_tools]] - video analysis
+- [[agent-skills-library/README]] - Agent Skills
+- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [[project-scaffolding/README]] - Project Scaffolding

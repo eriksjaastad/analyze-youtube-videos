@@ -216,3 +216,7 @@ All reports save to `reports/` directory in this project.
 ### Error Handling
 - **No Silent Failures:** NEVER swallow exceptions without logging.
 - ALWAYS log errors with context (file path, operation attempted, error message).
+
+
+<!-- project-scaffolding template appended -->
+

@@ -49,7 +49,7 @@ scripts/config.py:    # No API keys required - uses local Ollama
 ```bash
 # Hardcoded Absolute Paths
 $ grep -rn "/Users/" . --exclude-dir=".venv" --exclude-dir=".git"
-./.cursorrules:60:    path: /Users/eriksjaastad/projects/agent-skills-library/
+./.cursorrules:60:    path: [USER_HOME]/projects/agent-skills-library/
 # Result: ⚠️ FINDING (1 absolute path in .cursorrules)
 ```
 
@@ -118,7 +118,7 @@ pytest-mock
 - **Location:** `.cursorrules` (5,663 bytes)
 - **CRITICAL ISSUE:** Line 60 contains absolute path
   ```
-  path: /Users/eriksjaastad/projects/agent-skills-library/
+  path: [USER_HOME]/projects/agent-skills-library/
   ```
 - **Impact:** Non-portable, breaks on other machines
 - **Blast Radius:** LOW (IDE config only, doesn't propagate to generated files)
@@ -479,7 +479,7 @@ The system has completed v8 "Gold Standard - Ship It" certification with zero-de
    - **Effort:** 5 minutes
 
 2. **Absolute Path Repair** (Priority: MEDIUM)
-   - **Issue:** `.cursorrules` line 60 has `/Users/eriksjaastad/`
+   - **Issue:** `.cursorrules` line 60 has `[USER_HOME]/`
    - **Location:** `.cursorrules:60`
    - **Fix:** Replace with environment variable or relative path
      ```yaml
@@ -616,3 +616,12 @@ The system has completed v8 "Gold Standard - Ship It" certification with zero-de
 **Files Reviewed:** 22+ (scripts, tests, docs, configs)
 **Lines Analyzed:** 1,565+ (excluding venv)
 **Agent ID for Resume:** a9a254b
+
+
+## Related Documentation
+
+- [[CODE_QUALITY_STANDARDS]] - code standards
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+

@@ -204,3 +204,15 @@ There are no remaining blockers. Not even style nits.
 ---
 
 *Review complete. 0 critical issues. 0 warnings (actionable). Gold Standard achieved.*
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[error_handling_patterns]] - error handling
+- [[ai_model_comparison]] - AI models
+- [[deployment_patterns]] - deployment
+- [[research_methodology]] - research
+- [[testing_strategy]] - testing/QA
+- [[video_analysis_tools]] - video analysis
+- [[analyze-youtube-videos/README]] - YouTube Analyzer

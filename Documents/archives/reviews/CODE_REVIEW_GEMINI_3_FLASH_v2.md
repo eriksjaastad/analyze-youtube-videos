@@ -26,7 +26,7 @@ The project is a functional "Librarian" and "Strategist" agent system for YouTub
 
 | ID | Category | Status | Check Item | Evidence / Findings |
 |----|----------|--------|------------|----------------------|
-| **M1** | **Robot** | ❌ **FAIL** | No hardcoded `/Users/` paths | `64:**Skills Library Location:** /Users/eriksjaastad/projects/agent-skills-library/` in `.cursorrules` |
+| **M1** | **Robot** | ❌ **FAIL** | No hardcoded `/Users/` paths | `64:**Skills Library Location:** [USER_HOME]/projects/agent-skills-library/` in `.cursorrules` |
 | **M2** | **Robot** | ✅ **PASS** | No silent `except: pass` | Checked `scripts/` - all exceptions are logged or re-raised. |
 | **M3** | **Robot** | ✅ **PASS** | No API keys in code | No `sk-` or similar patterns found. Uses local Ollama. |
 | **P1** | **DNA** | ✅ **PASS** | Templates portable | `templates/` directory is clean of machine-specific data. |
@@ -78,4 +78,10 @@ The system relies heavily on updating `VIDEOS_QUEUE.md` and `library/00_Index_Li
 
 **Status:** ❌ **REJECTED** (Fix mandatory items for Layer 1 Re-Scan)
 **Authorized by:** Architecture Reviewer (Gemini 3 Flash)
+
+
+## Related Documentation
+
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
 

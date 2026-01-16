@@ -110,3 +110,9 @@ Pre-Review Scan: ❌ Not run (manual inspection only; no code executed)
 4. Add content-length guards and streaming for model interactions.  
 5. Harden category detection/tagging to align with project taxonomy.
 
+
+## Related Documentation
+
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+

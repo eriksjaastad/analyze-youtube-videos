@@ -79,3 +79,9 @@ The system relies heavily on updating `VIDEOS_QUEUE.md` and `library/00_Index_Li
 **Status:** ❌ **REJECTED** (Fix mandatory items for Layer 1 Re-Scan)
 **Authorized by:** Architecture Reviewer (Gemini 3 Flash)
 
+
+## Related Documentation
+
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+
