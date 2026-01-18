@@ -28,6 +28,7 @@ Autonomous agent system for analyzing YouTube content and extracting strategic i
 - `config.py` - Centralized configuration and health checks for local Ollama/DeepSeek models.
 
 ### Knowledge Library (library/)
+- **Anti-Gravity & Agentic Workflows**: specialized section for Vibe Coding and DOE framework research.
 - 10+ Deep-dive video analyses on AI architecture, coding workflows, and creator strategy.
 - `00_Index_Library.md` - Rendered map of all analyzed content grouped by category.
 - `index.yaml` - Machine-readable Source of Truth for the knowledge library.
@@ -46,6 +47,8 @@ Autonomous agent system for analyzing YouTube content and extracting strategic i
 
 ## Recent Activity
 
+- **2026-01-17**: **Anti-Gravity Deep-Dive Initiated**. Analyzed 3 new advanced tutorials and workflow guides (Mikey Itua, George Alonge, Nate B. Jones).
+- **2026-01-17**: Established new **Anti-Gravity & Agentic Workflows** category in the knowledge library.
 - **2026-01-16**: Analyzed **"Don't build AI Automations... Build Agentic Workflows"** by Duncan Rogoff (AI Automation).
 - **2026-01-12**: **Gold Standard Certification Achieved**. All P0/P1 issues remediated.
 - **2026-01-12**: Implemented industrial hardening (atomic writes, path traversal guards, subprocess timeouts).

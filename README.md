@@ -27,6 +27,36 @@ This project is certified under the **Gold Standard** governance protocol:
 
 ---
 
+## 🤖 Agents
+
+This project utilizes several specialized roles implemented as **autonomous scripts** (Workers), orchestrated to analyze and synthesize YouTube content.
+
+> **Note on Indexing**: The *Worker Agents* manage internal data indices (like `library/index.yaml`). The *Floor Manager* (Claude/Cursor) is responsible for maintaining the high-level **Project Index** (`00_Index_*.md`) per `CLAUDE.md` standards.
+
+### 1. The Librarian (scripts/librarian.py)
+**Role**: Knowledge Extraction & Organization
+**Function**: 
+- Downloads YouTube transcripts using `yt-dlp`.
+- Cleans and formats transcripts for LLM processing.
+- Performs deep-dive analysis of individual videos.
+- Manages the `library/index.yaml` source of truth and renders the library index.
+
+### 2. The Strategist (scripts/synthesize.py)
+**Role**: Strategic Synthesis
+**Function**: 
+- Aggregates multiple reports from the library.
+- Synthesizes findings into a "Master Strategy" document.
+- Identifies patterns, contradictions, and "Common Truths".
+- Manages context limits via document summarization.
+
+### 3. The Bridge (scripts/bridge.py)
+**Role**: Skill Promotion
+**Function**: 
+- Evaluates potential skills for promotion to the global `agent-skills-library`.
+- Generates Claude Adapters, Cursor Rules, and Playbooks for new skills.
+
+---
+
 ## 📂 Project Structure
 
 ```bash
@@ -93,6 +123,49 @@ bash scripts/pre_review_scan.sh
 *Last Updated: January 2026*  
 *Part of the eriksjaastad ecosystem.*
 
+---
+
+## Status
+
+**Tags:** #map/project #p/analyze-youtube-videos  
+**Status:** #status/complete  
+**Last Major Update:** January 2026 (Gold Standard Certification)  
+**Purpose:** Insight extraction and creator methodology research
+
+## Recent Activity
+
+- **2026-01-12**: **Gold Standard Certification Achieved**. All P0/P1 issues remediated.
+- **2026-01-12**: Implemented industrial hardening (atomic writes, path traversal guards, subprocess timeouts).
+- **2026-01-12**: Applied project-scaffolding v1.0.0 and established standalone portability.
+- **2026-01-12**: Implemented the "Librarian" context-budget strategy with summarization fallbacks.
+- **2026-01-10**: Initial Skill Library integration and "Bridge" agent implementation.
+
+## Ecosystem Hardening
+- `warden_audit.py` - Security and standards enforcement (Robotic Scan).
+- `validate_project.py` - Structural compliance and DNA integrity verification.
+- `pre_review_scan.sh` - Automated Gate 0 script for CI/CD readiness.
+- `config.py` - Centralized configuration and health checks for local Ollama/DeepSeek models.
+
+---
+
+## Related Documentation
+
+- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
+- [[LOCAL_MODEL_LEARNINGS]] - local AI
+- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
+- [[architecture_patterns]] - architecture
+- [[queue_processing_guide]] - queue/workflow
+- [[testing_strategy]] - testing/QA
+- [[video_analysis_tools]] - video analysis
+- [[agent-skills-library/README]] - Agent Skills
+- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [[project-scaffolding/README]] - Project Scaffolding
+- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
+- [[ai_model_comparison]] - AI models
+- [[research_methodology]] - research
+- [[cost_management]] - cost management
+- [[adult_business_compliance]] - adult industry
+- [[security_patterns]] - security
 
 <!-- project-scaffolding template appended -->
 
@@ -124,16 +197,3 @@ See the `Documents/` directory for detailed documentation:
 ## Status
 - **Current Phase:** [Phase Name]
 - **Status:** #status/active
-
-## Related Documentation
-
-- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
-- [[LOCAL_MODEL_LEARNINGS]] - local AI
-- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
-- [[architecture_patterns]] - architecture
-- [[queue_processing_guide]] - queue/workflow
-- [[testing_strategy]] - testing/QA
-- [[video_analysis_tools]] - video analysis
-- [[agent-skills-library/README]] - Agent Skills
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
-- [[project-scaffolding/README]] - Project Scaffolding

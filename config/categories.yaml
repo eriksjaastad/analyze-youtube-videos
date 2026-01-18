@@ -1,7 +1,10 @@
 categories:
+  - id: antigravity
+    name: "🚀 Anti-Gravity & Agentic Workflows"
+    keywords: ["antigravity", "antigraviy", "agentic", "doe", "orchestration", "vibe"]
   - id: ai_automation
     name: "🤖 AI & Automation"
-    keywords: ["ai", "automation", "agent", "llm", "orchestration"]
+    keywords: ["ai", "automation", "agent", "llm"]
   - id: health_diet
     name: "🥗 Health & Diet"
     keywords: ["diet", "fat", "health", "nutrition", "workout"]

@@ -35,6 +35,7 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ## Videos To Analyze
 
 ### Priority Queue
+
 <!-- Add new video URLs here -->
 
 ### Backlog
@@ -46,6 +47,21 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
+- [x] **"Antigravity Advanced Tutorial Easy Tutorial"** by Mikey Itua
+  - **Date analyzed:** 2026-01-17
+  - **URL:** https://youtu.be/-X0WvsUdMjQ?si=JbQh2rLoQQaFJ58K
+  - **Location:** `library/2026-01-14_mikey-itua_antigravity-advanced-tutorial-easy-tutor_-x0wvsud.md`
+
+- [x] **"Antigraviy Rules and Workflows"** by George Alonge
+  - **Date analyzed:** 2026-01-17
+  - **URL:** https://youtu.be/7tzgiTAxjjI?si=8_Y2cAkIYfHmWeGu
+  - **Location:** `library/2025-12-02_george-alonge_antigraviy-rules-and-workflows_7tzgitax.md`
+
+- [x] **"Stop Competing With 400 Applicants. Build This in One Weekend (Yes, there's a  no code option too!)"** by AI News & Strategy Daily | Nate B Jones
+  - **Date analyzed:** 2026-01-17
+  - **URL:** https://youtu.be/0teZqotpqT8?si=6e8rTEBOKQf5u45q
+  - **Location:** `library/2026-01-16_ai-news-strategy-daily-nate-b-jones_stop-competing-with-400-applicants-build_0tezqotp.md`
+
 - [x] **"DON'T build AI automations, build agentic workflows! (Google Antigravity)"** by Duncan Rogoff | AI Automation
   - **Date analyzed:** 2026-01-16
   - **URL:** https://youtu.be/7U6pKex9tbE?si=H-NeavipzSjKwy8n
