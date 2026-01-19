@@ -47,6 +47,11 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
+- [x] **"Making $$$ with AI SaaS (I might delete this)"** by David Ondrej
+  - **Date analyzed:** 2026-01-19
+  - **URL:** https://youtu.be/nS62guAxeGA?si=t80klFo7QULA8FQQ
+  - **Location:** `library/2026-01-17_david-ondrej_making-with-ai-saas-i-might-delete-this_ns62guax.md`
+
 - [x] **"Antigravity Advanced Tutorial Easy Tutorial"** by Mikey Itua
   - **Date analyzed:** 2026-01-17
   - **URL:** https://youtu.be/-X0WvsUdMjQ?si=JbQh2rLoQQaFJ58K
