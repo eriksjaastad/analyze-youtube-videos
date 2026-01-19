@@ -47,6 +47,11 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
+- [x] **"Use Local LLMs Already!"** by The Art Of The Terminal
+  - **Date analyzed:** 2026-01-19
+  - **URL:** https://youtu.be/pfxgLX-MxMY?si=pw-Qf1Wrje7U6Wdu
+  - **Location:** `library/2026-01-08_the-art-of-the-terminal_use-local-llms-already_pfxglx-m.md`
+
 - [x] **"Making $$$ with AI SaaS (I might delete this)"** by David Ondrej
   - **Date analyzed:** 2026-01-19
   - **URL:** https://youtu.be/nS62guAxeGA?si=t80klFo7QULA8FQQ
