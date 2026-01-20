@@ -47,6 +47,11 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
+- [x] **"The Claude Code Feature Senior Engineers KEEP MISSING"** by IndyDevDan
+  - **Date analyzed:** 2026-01-20
+  - **URL:** https://youtu.be/u5GkG71PkR0?si=EiOfWFzYuZp0wUb3
+  - **Location:** `library/2026-01-19_indydevdan_the-claude-code-feature-senior-engineers_u5gkg71p.md`
+
 - [x] **"Use Local LLMs Already!"** by The Art Of The Terminal
   - **Date analyzed:** 2026-01-19
   - **URL:** https://youtu.be/pfxgLX-MxMY?si=pw-Qf1Wrje7U6Wdu
