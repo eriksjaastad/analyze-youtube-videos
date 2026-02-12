@@ -1,5 +1,4 @@
 import os
-import os
 import sys
 import argparse
 import tempfile
@@ -7,11 +6,61 @@ import json
 import subprocess
 import re
 import yaml
-import shutil
+import time
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, select_subtitle, initialize_directories, safe_slug, logger, polish_with_cloud, apply_replacements
+
+def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_delay: float = 2.0) -> Optional[subprocess.CompletedProcess]:
+    """
+    Runs a subprocess command with exponential backoff retry logic.
+
+    Args:
+        cmd: Command to run as list of strings
+        timeout: Timeout in seconds for each attempt
+        max_retries: Maximum number of retry attempts (default: 3)
+        base_delay: Base delay in seconds for exponential backoff (default: 2.0)
+
+    Returns:
+        subprocess.CompletedProcess on success, None on exhaustion
+    """
+    for attempt in range(max_retries):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+            # Success - return immediately
+            if result.returncode == 0:
+                return result
+
+            # Non-zero return code - retry with backoff
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(f"Command failed (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
+                time.sleep(delay)
+            else:
+                logger.error(f"Command failed after {max_retries} attempts")
+                return result  # Return the failed result for error handling
+
+        except subprocess.TimeoutExpired:
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(f"Command timed out (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
+                time.sleep(delay)
+            else:
+                logger.error(f"Command timed out after {max_retries} attempts")
+                return None
+
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+            raise
+
+        except FileNotFoundError:
+            logger.error(f"Command not found: {cmd[0]}")
+            return None
+
+    return None
 
 def atomic_write(path: Path, content: str) -> None:
     """Atomic write using a temp file and rename pattern."""
@@ -45,7 +94,116 @@ def clean_srt(srt_content: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-def get_video_data(url: str) -> Optional[Dict[str, Any]]:
+def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
+    """
+    Downloads audio from a YouTube video using yt-dlp.
+    Returns path to the downloaded MP3 file, or None on failure.
+    """
+    try:
+        audio_path = temp_dir / "audio.mp3"
+        logger.info(f"[*] Downloading audio for Whisper transcription...")
+
+        cmd = [
+            "yt-dlp",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--output", str(audio_path.with_suffix('')),  # yt-dlp adds .mp3
+            url
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            logger.error(f"Audio download failed: {result.stderr}")
+            return None
+
+        if audio_path.exists():
+            return audio_path
+        else:
+            logger.error(f"Audio file not found at {audio_path}")
+            return None
+
+    except subprocess.TimeoutExpired:
+        logger.error("Audio download timed out after 300 seconds")
+        return None
+    except Exception as e:
+        logger.error(f"Error downloading audio: {e}")
+        return None
+
+def extract_chapters(metadata: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    Extracts and formats chapter information from YouTube metadata.
+
+    Args:
+        metadata: Video metadata dict from yt-dlp
+
+    Returns:
+        List of dicts with 'timestamp' and 'title' keys, or empty list if no chapters
+    """
+    chapters = metadata.get("chapters", [])
+    if not chapters:
+        return []
+
+    formatted_chapters = []
+    for chapter in chapters:
+        start_time = chapter.get("start_time", 0)
+        title = chapter.get("title", "Untitled")
+
+        # Format timestamp as HH:MM:SS or MM:SS
+        hours = int(start_time // 3600)
+        minutes = int((start_time % 3600) // 60)
+        seconds = int(start_time % 60)
+
+        if hours > 0:
+            timestamp = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        else:
+            timestamp = f"{minutes:02d}:{seconds:02d}"
+
+        formatted_chapters.append({
+            "timestamp": timestamp,
+            "title": title
+        })
+
+    return formatted_chapters
+
+def transcribe_with_whisper(audio_path: Path) -> Optional[str]:
+    """
+    Transcribes audio file using faster-whisper.
+    Returns transcript text, or None on failure.
+    """
+    try:
+        # Lazy import so faster-whisper is optional
+        from faster_whisper import WhisperModel
+
+        logger.info(f"[*] Transcribing with Whisper (this may take a few minutes)...")
+
+        # Use base model with CPU and int8 for reasonable speed/quality tradeoff
+        model = WhisperModel("base", device="cpu", compute_type="int8")
+
+        # Transcribe with VAD filter to improve accuracy
+        segments, info = model.transcribe(
+            str(audio_path),
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+
+        # Combine all segments into single transcript
+        transcript_parts = []
+        for segment in segments:
+            transcript_parts.append(segment.text.strip())
+
+        transcript = " ".join(transcript_parts)
+        logger.info(f"[+] Whisper transcription complete ({len(transcript)} characters)")
+
+        return transcript
+
+    except ImportError:
+        logger.error("faster-whisper not installed. Install with: pip install faster-whisper")
+        return None
+    except Exception as e:
+        logger.error(f"Whisper transcription failed: {e}")
+        return None
+
+def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict[str, Any]]:
     """
     Uses yt-dlp to fetch video metadata and SRT transcript.
     Prioritizes manual subtitles over auto-generated ones.
@@ -56,18 +214,19 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
         
         try:
             logger.info(f"[*] Fetching metadata for: {url}")
-            
+
             cmd_info = [
                 "yt-dlp",
                 "--skip-download",
                 "--print-json",
                 url
             ]
-            result = subprocess.run(cmd_info, capture_output=True, text=True, timeout=60)
-            if result.returncode != 0:
-                logger.error(f"Error fetching metadata: {result.stderr}")
+            result = run_with_retry(cmd_info, timeout=60)
+            if result is None or result.returncode != 0:
+                error_msg = result.stderr if result else "Command failed after retries"
+                logger.error(f"Error fetching metadata: {error_msg}")
                 return None
-            
+
             metadata = json.loads(result.stdout)
             
             logger.info("[*] Fetching manual and auto-subtitles...")
@@ -82,15 +241,16 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
                 "--output", sub_path_base,
                 url
             ]
-            sub_result = subprocess.run(cmd_subs, capture_output=True, text=True, timeout=120)
-            if sub_result.returncode != 0:
+            sub_result = run_with_retry(cmd_subs, timeout=120)
+            if sub_result is None or sub_result.returncode != 0:
+                error_msg = sub_result.stderr if sub_result else "Command failed after retries"
                 logger.warning(f"Subtitle fetch command failed for {url}.")
-                logger.debug(f"Stderr: {sub_result.stderr}")
+                logger.debug(f"Stderr: {error_msg}")
             
             srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
             transcript = ""
             target_file = select_subtitle(srt_files, "transcript")
-                
+
             if target_file:
                 target_path = unique_temp / target_file
                 with open(target_path, 'r', encoding='utf-8') as f:
@@ -98,7 +258,29 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
                     transcript = clean_srt(srt_content)
             else:
                 logger.warning("No SRT transcript found.")
+
+                # Try Whisper fallback if enabled
+                if use_whisper_fallback:
+                    logger.info("[*] Attempting Whisper fallback...")
+                    audio_path = download_audio(url, unique_temp)
+                    if audio_path:
+                        whisper_transcript = transcribe_with_whisper(audio_path)
+                        if whisper_transcript:
+                            transcript = whisper_transcript
+                            logger.info("[+] Using Whisper-generated transcript")
+                        else:
+                            logger.error("Whisper transcription failed")
+                    else:
+                        logger.error("Audio download failed")
+
+                # If both SRT and Whisper failed, return None
+                if not transcript:
+                    logger.error("No transcript available (SRT and Whisper both failed)")
+                    return None
                 
+            # Extract chapters if available
+            chapters = extract_chapters(metadata)
+
             return {
                 "title": metadata.get("title") or "Untitled",
                 "channel": metadata.get("uploader") or "Unknown_Channel",
@@ -110,7 +292,8 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
                 "tags": metadata.get("tags", []) or [],
                 "view_count": metadata.get("view_count") or 0,
                 "like_count": metadata.get("like_count") or 0,
-                "duration_string": metadata.get("duration_string") or "0:00"
+                "duration_string": metadata.get("duration_string") or "0:00",
+                "chapters": chapters
             }
         except subprocess.TimeoutExpired as e:
             logger.error(f"Subprocess timed out: {e}")
@@ -194,6 +377,10 @@ def analyze_with_ollama(data: Dict[str, Any], timeout: int = 600) -> Optional[st
 4. Do NOT include meta-commentary about your analysis process
 5. Do NOT repeat the transcript - synthesize and distill it
 6. Output ONLY the markdown content - no preamble or explanation
+7. IGNORE sponsor segments and promotional content entirely
+8. SKIP like and subscribe requests and channel/social media plugs
+9. OMIT intro/outro fluff (Hey everyone welcome back, Before we get started)
+10. FOCUS ONLY on substantive educational or informational content
 
 BEGIN YOUR ANALYSIS:"""
 
@@ -229,6 +416,12 @@ def save_to_library(data: Dict[str, Any], analysis: str) -> Path:
     if data.get('tags'):
         tags.extend([f"topic/{safe_slug(t)}" for t in data['tags'][:5]])
         
+    # Build chapter timeline section if chapters exist
+    chapter_section = ""
+    if data.get('chapters'):
+        chapter_lines = [f"- [{ch['timestamp']}] {ch['title']}" for ch in data['chapters']]
+        chapter_section = f"\n## Chapter Timeline\n\n" + "\n".join(chapter_lines) + "\n"
+
     content = f"""---
 tags:
 {chr(10).join([f"  - {t}" for t in tags])}
@@ -246,7 +439,7 @@ duration: "{data['duration_string']}"
 # {data['title']}
 
 > **Channel:** [{data['channel']}]({data['url']}) | **Duration:** {data['duration_string']} | **Views:** {data['view_count']:,}
-
+{chapter_section}
 {analysis}
 """
     
@@ -384,7 +577,8 @@ def main() -> None:
     parser.add_argument("url", help="YouTube URL to analyze")
     parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show analysis")
     parser.add_argument("--polish", action="store_true", help="Use cloud model (Gemini) to polish the analysis")
-    
+    parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
+
     args = parser.parse_args()
     url = args.url
 
@@ -396,7 +590,7 @@ def main() -> None:
         logger.error(f"Error: \"{url}\" is not a valid YouTube URL.")
         sys.exit(1)
 
-    data = get_video_data(url)
+    data = get_video_data(url, use_whisper_fallback=not args.no_whisper)
     if not data:
         logger.error("Failed to get video data.")
         sys.exit(1)

@@ -65,3 +65,17 @@ status: #status/active
 
 scaffolding_version: 1.0.0
 scaffolding_date: 2026-01-27
+
+## Recent Activity
+
+- 2026-02-12: chore: Add agent infrastructure and clean up archived reviews
+- 2026-01-20: feat: analyze IndyDevDan video on self-validating agents
+- 2026-01-19: feat: analyze "Use Local LLMs Already!" video
+- 2026-01-19: feat: analyze David Ondrej SaaS video and link to Prospector project
+- 2026-01-17: feat: establish Anti-Gravity research section in knowledge library
+- 2026-01-16: feat: analyze new video from priority queue
+- 2026-01-13: docs: align project index and rules with industrial standards
+- 2026-01-13: Merge pull request #10 from eriksjaastad/claude/organize-code-review-yYjPs
+- 2026-01-13: review: Add CODE_REVIEW_CLAUDE_OPUS_v3 - Gold Standard Certification
+- 2026-01-13: Merge remote-tracking branch 'origin/main' into claude/organize-code-review-yYjPs
+

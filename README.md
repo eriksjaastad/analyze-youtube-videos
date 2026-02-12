@@ -7,6 +7,11 @@ Brief description of the project's purpose
 ## Quick Start
 
 ```bash
+# System Dependencies (required for Whisper fallback)
+# macOS: brew install ffmpeg
+# Ubuntu: sudo apt-get install ffmpeg
+# Windows: Download from https://ffmpeg.org/download.html
+
 # Setup
 pip install -r requirements.txt
 
