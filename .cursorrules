@@ -1,222 +1,214 @@
-# Cursor Rules: Analyze YouTube Videos
+# Cursor Rules for analyze-youtube-videos
 
-> **Project:** YouTube Channel Analysis Agent  
-> **Purpose:** Autonomous agent for analyzing YouTube content using agent-skills-library
+# AGENTSYNC:START - Do not edit between markers
+# To modify synced rules: Edit .agentsync/rules/*.md, then run:
+# uv run $PROJECTS_ROOT/project-scaffolding/agentsync/sync_rules.py analyze-youtube-videos
 
----
+# analyze-youtube-videos
 
-## 📝 Markdown & Documentation Standards
+> Brief description of the project's purpose
 
-### YAML Frontmatter (CRITICAL)
-- **ALWAYS preserve YAML frontmatter** when editing `.md` files
-- Every markdown file should have frontmatter with:
-  ```yaml
-  ---
-  tags:
-    - p/analyze-youtube-videos
-    - type/agent
-    - domain/content-analysis
-    - tech/python
-  status: #status/active
-  created: YYYY-MM-DD
-  ---
-  ```
+## Tech Stack
 
-### Tag Taxonomy
-- Use **nested tags** for hierarchy: `#type/agent`, `#domain/content-analysis`
-- Tag structure:
-  - `#p/analyze-youtube-videos` - Project namespace
-  - `#type/agent` - This is an autonomous agent
-  - `#domain/content-analysis` - YouTube content analysis
-  - `#tech/python` - Technology stack
+- **Language:** Python
+- **Frameworks:** None
 
-### Obsidian Wikilinks
-- Use `[[analyze-youtube-videos]]` to link to this project
+## Commands
 
----
+- **Run:** `python main.py`
+- **Test:** `pytest`
 
-## 🚫 Context Window Management
+# Workflow
 
-**NEVER waste context on:**
-- `node_modules/`, `__pycache__/`, `.git/`
-- `data/` - Large transcript files
-- `venv/` - Virtual environment
+## Agent Hierarchy
 
-**When reading files:**
-- Use targeted reads for transcripts (can be very long)
-- Prefer `codebase_search` for finding analysis code
+### 1. The Conductor (Erik)
+- **Role:** Human-in-the-Loop / Vision / Command
+- **Authority:** Final approval on all architecture, logic, and project direction
 
----
+### 2. The Super Manager (Strategy & Context)
+- **Role:** Strategic Planner and Prompt Engineer
+- **Constraint:** STRICTLY PROHIBITED from writing code or using tools
+- **Mandate:** Drafts prompts with acceptance criteria as checklists
 
-## Project Overview
+### 3. The Floor Manager (QA & Execution)
+- **Role:** Orchestrator, Quality Assurance Lead, File Operator
+- **Constraint:** STRICTLY PROHIBITED from generating logic or writing code
+- **Mandate:** Verify work against checklists, perform file operations
 
-This directory contains an agent that analyzes YouTube channels and generates content strategy insights.
+### 4. The Workers (Local Models via Ollama)
+- **Role:** Primary Implementers of logic and code generation
+- **Mandate:** Generate code, report completion for inspection
 
-**Current phase:** Testing skills library integration  
-**Key approach:** Agent (this project) + Skills (from library)
+## Workflow Steps
 
----
+1. **Drafting:** Super Manager writes task prompt with acceptance criteria
+2. **Handoff:** Pass to Floor Manager
+3. **Execution:** Floor Manager delegates to Worker, provides context
+4. **Inspection:** Floor Manager checks each acceptance criteria item
+5. **Loop/Correction:** If fail, send back to Worker (max 3 attempts)
+6. **Finalization:** Task marked complete after sign-off
 
-## Skills Library Integration
+**CRITICAL:** Only Workers write code. Super Manager and Floor Manager never generate code.
 
-This project references skills from the global agent-skills-library:
+# Universal Constraints
 
-**Skills Library Location:** Configured in `.env` (`SKILLS_LIBRARY_PATH`)
+## Never Do
 
-### Primary Skill Used
+- NEVER modify `.env` or `venv/`
+- NEVER install dependencies globally (use project-local venv, uv, pipx, or poetry)
+- NEVER hard-code API keys, secrets, or credentials (use `.env` and `os.getenv()`)
+- NEVER use absolute paths (e.g., `/Users/...`) - use relative paths or env variables
+- NEVER use `rm` for file deletion - use `trash` command instead
+- NEVER use `--no-verify` or `-n` with git commit/push - fix the hook issue, don't bypass it
 
-**YouTube Channel Analysis**
-- **Playbook:** `/agent-skills-library/playbooks/youtube-channel-analysis/README.md`
-- **Cursor adapter:** `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
-- **Version:** 1.0.0
+## Always Do
 
-**When to use this skill:**
-- User requests channel analysis
-- User asks for content strategy insights
-- User wants to generate video ideas based on successful channels
+- ALWAYS update `EXTERNAL_RESOURCES.yaml` when adding external services
+- ALWAYS use retry logic and cost tracking for API calls
+- ALWAYS use `$HOME/.local/bin/uv run` for Python script execution in hooks/automation
 
-**How to use this skill:**
-Follow the adapter instructions in `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
+# Safety Rules
 
----
+## File Operations
 
-## Project-Specific Context
+- **Trash, Don't Delete:** NEVER use `rm` or permanent deletion
+- Use `trash` CLI (preferred) or `send2trash` (Python)
+- Use `git restore` for reverting tracked files
 
-### This Agent's Job
+## Context Protocol
 
-**What this agent does:**
-- Analyzes YouTube channels for content patterns
-- Generates personalized video recommendations
-- Extracts strategic insights from successful creators
+If context is missing or a file is unknown:
+- **STOP** and request information from the Floor Manager
+- **DO NOT GUESS**
 
-**What makes this different from the skill:**
-- **Skill** = Reusable instructions for analysis (works anywhere)
-- **Agent** = Specific job of analyzing YouTube content (uses the skill)
+## Failure Protocol
 
-Think of it like:
-- **Skill** = "How to analyze patterns in content" (general capability)
-- **Agent** = "YouTube content analyst" (specific role using that capability)
+If Worker fails **3 times** on the same task:
+- Halt and alert the Conductor
+- Do not continue attempting
 
-### Current Project State
+# AI-First Development Guidelines
 
-**Existing assets:**
-- `data/Nick Saraev/` - Example transcript and methodology
-- `README.md` - Agent vs Skill distinction explained
+## CLI Design
+- **Plain text output**: Avoid rich formatting (colors, bold) in default output to ensure easy parsing by AI agents.
+- **Single-line parseable formats**: For lists (like tasks), use single-line formats: `#<id> | <status> | <priority> | <text>`.
+- **JSON support**: Always provide a `--json` flag for structured output.
+- **Batch operations**: Support multiple IDs for commands like `show`, `start`, `done` to reduce round-trips.
 
-**Next development steps:**
-1. ✅ Extract skill to library (DONE - v1.0.0 created)
-2. 🔶 Test skill integration (IN PROGRESS - you are here)
-3. ⏳ Build agent orchestration layer
-4. ⏳ Add support for multiple channels
-5. ⏳ Create automated reporting workflow
+## File Operations
+- **Read before edit**: Always read the file content before performing a search-replace or write.
+- **Preserve custom content**: Use marker-based updates (e.g., `<!-- SCAFFOLD:START -->`) to preserve project-specific logic while updating governed sections.
+- **DNA Integrity**: Never use hardcoded absolute paths. Use relative paths or environment variables.
 
----
+## Task Workflow
+- **State Management**: Use `./pt tasks start <id>` when beginning work and `./pt tasks done <id>` when finished.
+- **Context Awareness**: Use `./pt tasks show <id>` to read the full task prompt, including Overview, Execution, and Done Criteria.
+- **Traceability**: All major changes should be linked to a task ID in the project tracker.
 
-## Project Structure
+## Communication
+- **Direct and Concise**: Avoid fluff in assistant responses.
+- **Proactive Planning**: Use `todo_write` to maintain a clear plan of action.
+- **Soulful Journaling**: Log strategic decisions and detours in the AI Journal for future context.
 
-```
-analyze-youtube-videos/
-├── .cursorrules               ← You are here
-├── README.md                  ← Agent description
-├── scripts/                   ← Tier 1 Core Agents
-│   ├── librarian.py           ← Data ingestion & cleaning
-│   ├── synthesize.py          ← Strategy aggregation
-│   └── bridge.py              ← Skill promotion
-├── library/                   ← Knowledge Library
-│   ├── 00_Index_Library.md    ← Knowledge Map
-│   └── index.yaml             ← Source of Truth
-├── synthesis/                 ← Master Strategy Reports
-└── tests/                     ← Production Test Harness
-```
+# Commit Message Task Linking
 
----
+## Rule: Include Task ID in Commits
 
-## Safety Rules
+When committing work that completes or advances a tracked task, include the task ID in the commit message.
 
-🟡 **Careful with:**
-- `youtube_data.db` - Contains analysis data, don't delete
-- `reports/` - Historical analysis, version before overwriting
-
-✅ **Safe to modify:**
-- Analysis scripts
-- Documentation
-- Data collection code
-
----
-
-## External Resources
-
-**Tools used:**
-- `yt-dlp` - YouTube metadata downloader
-- SQLite - Local database
-- Python - Analysis scripts
-
-**No API keys required** - This agent uses public YouTube data only.
-
----
-
-## Workflow
-
-### Step 1: User Requests Analysis
+## Format
 
 ```
-User: "Analyze [YouTube channel]"
+type: description (#TASK_ID)
 ```
 
-### Step 2: Activate YouTube Channel Analysis Skill
+**Examples:**
+- `feat: Add versioning to agentsync (#4597)`
+- `fix: Validate_project false positives (#4598)`
+- `docs: Update 00_Index template (#4599)`
 
-Reference: `/agent-skills-library/cursor-rules/youtube-channel-analysis/RULE.md`
+## Multiple Tasks
 
-1. Gather user context (niche, goals, etc.)
-2. Check if data is collected (yt-dlp)
-3. Create analysis plan (4-stage pipeline)
-4. Execute phases incrementally
-5. Generate personalized recommendations
+If a commit addresses multiple tasks:
+```
+feat: Major cleanup and template updates (#4540, #4541)
+```
 
-### Step 3: Save Outputs
+## Why This Matters
 
-All reports save to `reports/` directory in this project.
+- Enables automatic task-to-commit linking in project-tracker
+- Creates audit trail from kanban board to git history
+- Makes "what got done" visible without manual reconciliation
 
----
+## When to Skip
 
-## Related Documentation
+- Pure refactoring with no associated task
+- Typo fixes and trivial changes
+- Use your judgment - not every commit needs a task ID
 
-- **Skills Library Main README:** `/agent-skills-library/README.md`
-- **YouTube Analysis Playbook:** `/agent-skills-library/playbooks/youtube-channel-analysis/README.md`
-- **Integration Guide:** `/agent-skills-library/INTEGRATION_GUIDE.md`
-- **Project Scaffolding:** `/project-scaffolding/` (meta patterns)
+# Database Safety Rules
 
----
+## CRITICAL: Databases Are Stateful - Treat With Extreme Care
 
-## Testing Notes
+Databases contain accumulated work that cannot be recreated. One careless command can destroy hours or days of data.
 
-**This project is a test case for:**
-- Skills library integration pattern
-- Agent vs skill distinction
-- Cross-project skill reuse
+## Forbidden Operations
 
-**If something doesn't work:**
-1. Check if issue is with skill (update playbook)
-2. Or issue is with agent (update this project)
-3. Update integration guide with learnings
+**NEVER execute these without explicit user approval:**
 
----
+1. `DROP TABLE` - Destroys table and all data
+2. `DELETE FROM table` (without WHERE) - Deletes all rows
+3. `TRUNCATE TABLE` - Empties entire table
+4. `rm *.db` or `rm *.sqlite` - Deletes database file
+5. Recreating tables that contain data
+6. Any "reset", "init", or "recreate" that would wipe existing data
 
-*Part of Erik's project ecosystem - see project-scaffolding for patterns*
+## Required Practices
 
+### Before Any Schema Change
+```bash
+# 1. Check if table has data
+sqlite3 database.db "SELECT COUNT(*) FROM table_name;"
 
----
+# 2. If data exists, STOP and ask user
+# 3. Never auto-migrate tables with data
+```
 
-## 🛡️ Safety Rules
+### For Migrations
+- Use `ALTER TABLE ADD COLUMN` (additive only)
+- Never drop columns or tables with data
+- If schema is incompatible, REFUSE and explain - don't auto-fix
 
-### File Operations
-- **Trash, Don't Delete:** NEVER use `rm`, `os.remove`, `os.unlink`, or `shutil.rmtree` for permanent deletion.
-- ALWAYS use `send2trash` (Python) or move files to a `_trash/` directory.
+### For Deletions
+- Always use the application's API (e.g., `DatabaseManager.delete_task()`)
+- Never run raw SQL DELETE outside the application
+- The API creates backups automatically
 
-### Error Handling
-- **No Silent Failures:** NEVER swallow exceptions without logging.
-- ALWAYS log errors with context (file path, operation attempted, error message).
+## If You Need to Reset a Database
 
+**DO NOT** just drop tables or delete the file.
 
-<!-- project-scaffolding template appended -->
+**DO:**
+1. Ask the user explicitly: "This will delete X rows. Proceed?"
+2. Create a backup first: `cp database.db database.db.backup`
+3. Export data: `./pt tasks export` (if available)
+4. Only then proceed with the reset
 
+## Why This Exists
+
+On 2026-01-27, an AI agent ran a migration that dropped the tasks table without backup, destroying 94 tasks. This rule exists to prevent that from ever happening again.
+
+## Quick Reference
+
+| Want to do... | Do this instead |
+|---------------|-----------------|
+| Add a column | `ALTER TABLE x ADD COLUMN y` |
+| Delete one row | Use app's delete method (has backup) |
+| Delete many rows | Ask user first, backup, then delete |
+| Change column type | Create new column, migrate data, drop old |
+| Reset database | Ask user, backup, export, then reset |
+| Fix schema issues | REFUSE and print manual instructions |
+
+# Source: .agentsync/rules/*.md
+# AGENTSYNC:END - Custom rules below this line are preserved

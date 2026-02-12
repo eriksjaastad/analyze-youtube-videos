@@ -1,16 +1,5 @@
-# Ignore large data and temp files
-library/index.yaml
-library/*.md
-synthesis/*.md
-scripts/temp/
-data/
-venv/
-__pycache__/
-.DS_Store
 
-
-<!-- project-scaffolding template appended -->
-
+<!-- SCAFFOLD:START - Do not edit between markers -->
 # Dependencies & Packages
 node_modules/
 venv/
@@ -37,3 +26,14 @@ build/
 .idea/
 .cursor/
 
+
+<!-- SCAFFOLD:END - Custom content below is preserved -->
+# Ignore large data and temp files
+library/index.yaml
+library/*.md
+synthesis/*.md
+scripts/temp/
+data/
+venv/
+__pycache__/
+.DS_Store

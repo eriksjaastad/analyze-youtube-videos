@@ -178,14 +178,11 @@ Then bump skill to **v1.1.0** with improvements!
 
 ## Related Documentation
 
-- [[automation_patterns]] - automation
-- [[cost_management]] - cost management
-- [[database_setup]] - database
-- [[prompt_engineering_guide]] - prompt engineering
-- [[queue_processing_guide]] - queue/workflow
-- [[ai_model_comparison]] - AI models
+- [Automation Reliability](patterns/automation-reliability.md) - automation
+- [Cost Management](Documents/reference/MODEL_COST_COMPARISON.md) - cost management
+- [Tiered AI Sprint Planning](patterns/tiered-ai-sprint-planning.md) - prompt engineering
+- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
 - [[data_quality_patterns]] - data quality
-- [[testing_strategy]] - testing/QA
 - [[video_analysis_tools]] - video analysis
-- [[agent-skills-library/README]] - Agent Skills
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [Agent Skills Library](../agent-skills-library/README.md) - Agent Skills
+- [README](README) - YouTube Analyzer

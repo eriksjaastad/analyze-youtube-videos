@@ -11,7 +11,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, select_subtitle, initialize_directories, safe_slug, logger
+from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, select_subtitle, initialize_directories, safe_slug, logger, polish_with_cloud, apply_replacements
 
 def atomic_write(path: Path, content: str) -> None:
     """Atomic write using a temp file and rename pattern."""
@@ -119,32 +119,83 @@ def get_video_data(url: str) -> Optional[Dict[str, Any]]:
             logger.error(f"Unexpected error in get_video_data: {e}")
             return None
 
-def analyze_with_ollama(data: Dict[str, Any]) -> Optional[str]:
+def analyze_with_ollama(data: Dict[str, Any], timeout: int = 600) -> Optional[str]:
     """
     Calls local Ollama to analyze the transcript.
     Returns None on failure to prevent data corruption.
     """
     logger.info(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
     
-    prompt = f"""
-You are "The Librarian," a senior AI automation engineer. Your goal is to analyze the following YouTube video transcript and extract high-density, architecturally-focused insights.
+    prompt = f"""You are a senior technical writer creating a professional analysis document. Your task is to transform a YouTube video transcript into a structured, actionable report.
 
-### Video Metadata
-Title: {data['title']}
-Channel: {data['channel']}
-URL: {data['url']}
-Views: {data['view_count']}
-Likes: {data['like_count']}
-Duration: {data['duration_string']}
+**VIDEO METADATA**
+- Title: {data['title']}
+- Channel: {data['channel']}
+- Duration: {data['duration_string']}
+- Views: {data['view_count']:,} | Likes: {data['like_count']:,}
 
-### Full Transcript
+**TRANSCRIPT TO ANALYZE**
 {data['transcript']}
 
 ---
 
-### Instructions
-Generate a structured report in Markdown format. Return ONLY the Markdown content.
-"""
+**YOUR OUTPUT MUST FOLLOW THIS EXACT STRUCTURE:**
+
+## Video Overview
+
+**Source:** "{data['title']}" by {data['channel']}
+**Duration:** {data['duration_string']}
+
+**Core Premise:** [1-2 sentences: What is the main argument or purpose of this video?]
+
+---
+
+## Key Concepts & Methodology
+
+[Break down the video into its major sections/concepts. For each:
+- Give it a descriptive heading
+- Explain what was covered in 2-4 bullet points
+- Include any specific tools, techniques, or frameworks mentioned]
+
+---
+
+## Actionable Takeaways
+
+[List 5-10 specific, concrete actions a viewer could take. These should be practical and implementable, not vague advice. Format as a numbered list.]
+
+---
+
+## Notable Quotes & Insights
+
+[Extract 3-5 of the most valuable quotes or insights from the video. Include context for why each matters.]
+
+---
+
+## Critical Assessment
+
+**Strengths:** [What did this video do well?]
+
+**Limitations:** [What was missing, unclear, or could be improved?]
+
+**Best For:** [Who would benefit most from this video?]
+
+---
+
+## Related Concepts
+
+[List related topics, tools, or frameworks mentioned that warrant further exploration. Use bullet points with brief descriptions.]
+
+---
+
+**IMPORTANT RULES:**
+1. Write in clear, professional prose - no filler phrases like "In this video, we will..."
+2. Extract SPECIFIC details (names, tools, numbers, techniques) - not vague summaries
+3. Focus on WHAT the viewer can DO with this information
+4. Do NOT include meta-commentary about your analysis process
+5. Do NOT repeat the transcript - synthesize and distill it
+6. Output ONLY the markdown content - no preamble or explanation
+
+BEGIN YOUR ANALYSIS:"""
 
     try:
         return run_ollama_command(prompt)
@@ -192,14 +243,11 @@ likes: {data['like_count']}
 duration: "{data['duration_string']}"
 ---
 
-# [[{data['title']}]]
+# {data['title']}
+
+> **Channel:** [{data['channel']}]({data['url']}) | **Duration:** {data['duration_string']} | **Views:** {data['view_count']:,}
 
 {analysis}
-
----
-
-## Full Transcript
-{data['transcript']}
 """
     
     atomic_write(filepath, content)
@@ -335,6 +383,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="The Librarian: Extract and analyze YouTube transcripts.")
     parser.add_argument("url", help="YouTube URL to analyze")
     parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show analysis")
+    parser.add_argument("--polish", action="store_true", help="Use cloud model (Gemini) to polish the analysis")
     
     args = parser.parse_args()
     url = args.url
@@ -352,10 +401,21 @@ def main() -> None:
         logger.error("Failed to get video data.")
         sys.exit(1)
         
-    analysis = analyze_with_ollama(data)
+    # Increased timeout for long transcripts
+    analysis = analyze_with_ollama(data, timeout=900)
     if analysis is None:
         logger.error("CRITICAL ERROR: Analysis failed. Aborting to prevent library corruption.")
         sys.exit(1)
+    
+    # Optional polish step with cloud model
+    if args.polish:
+        logger.info("[*] Running polish step with Gemini...")
+        polished = polish_with_cloud(analysis)
+        if polished:
+            analysis = polished
+    
+    # Apply find-replace rules from config/replacements.yaml
+    analysis = apply_replacements(analysis)
         
     if args.dry_run:
         logger.info("--- DRY RUN: Analysis Report ---")

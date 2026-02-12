@@ -14,12 +14,12 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 echo "1. Running Warden Security Audit (fast mode)..."
-python3 ./scripts/warden_audit.py --root "$(pwd)" --fast
+python ./scripts/warden_audit.py --root . --fast
 WARDEN_EXIT=$?
 
 echo ""
 echo "2. Running Project Validation..."
-python3 ./scripts/validate_project.py analyze-youtube-videos
+python ./scripts/validate_project.py analyze-youtube-videos
 VALIDATE_EXIT=$?
 
 echo ""

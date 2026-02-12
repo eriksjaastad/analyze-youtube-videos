@@ -1,0 +1,19 @@
+# Post-Processing Find & Replace Rules
+# 
+# These are applied after the polish step to fix common transcription errors.
+# Add patterns as you discover them across videos.
+#
+# Format:
+#   - find: "incorrect text"
+#     replace: "correct text"
+#     case_sensitive: false  # optional, defaults to false
+#
+# Examples of common transcription errors:
+#   - AI tool names (Cloud Code → Claude Code)
+#   - Technical terms misheard
+#   - Brand names
+
+replacements:
+  # Populate after running the full queue and reviewing patterns
+  # - find: "Cloud Code"
+  #   replace: "Claude Code"

@@ -8,6 +8,11 @@ import unicodedata
 from pathlib import Path
 from typing import Optional, Tuple, List
 
+from dotenv import load_dotenv
+
+# Load .env file if present
+load_dotenv()
+
 # --- Logging Configuration ---
 logging.basicConfig(
     level=logging.INFO,
@@ -70,8 +75,15 @@ def run_ollama_command(prompt: str, system_prompt: Optional[str] = None, timeout
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
         response = result.stdout.strip()
         
-        # Strip DeepSeek-R1 internal monologue
-        return re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        # Strip DeepSeek-R1 internal monologue - multiple formats
+        # Format 1: <think>...</think> tags
+        response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+        # Format 2: Thinking... ...done thinking. plaintext markers
+        response = re.sub(r'Thinking\.\.\..*?\.\.\.done thinking\.', '', response, flags=re.DOTALL | re.IGNORECASE)
+        # Format 3: <Thinking>...</Thinking> or similar variants
+        response = re.sub(r'</?[Tt]hinking>', '', response)
+        
+        return response.strip()
         
     except subprocess.TimeoutExpired as e:
         logger.error(f"Ollama command timed out after {timeout} seconds: {e}")
@@ -175,3 +187,89 @@ def initialize_directories() -> None:
     """
     for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
         d.mkdir(parents=True, exist_ok=True)
+
+
+def apply_replacements(content: str) -> str:
+    """
+    Apply find-replace rules from config/replacements.yaml.
+    Returns content with all replacements applied.
+    """
+    import yaml
+    
+    replacements_path = Path("config/replacements.yaml")
+    if not replacements_path.exists():
+        return content
+    
+    try:
+        with open(replacements_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        
+        rules = config.get("replacements") or []
+        if not rules:
+            return content
+        
+        for rule in rules:
+            find_text = rule.get("find", "")
+            replace_text = rule.get("replace", "")
+            case_sensitive = rule.get("case_sensitive", False)
+            
+            if not find_text:
+                continue
+            
+            if case_sensitive:
+                content = content.replace(find_text, replace_text)
+            else:
+                # Case-insensitive replacement
+                pattern = re.compile(re.escape(find_text), re.IGNORECASE)
+                content = pattern.sub(replace_text, content)
+        
+        return content
+        
+    except Exception as e:
+        logger.warning(f"Failed to apply replacements: {e}")
+        return content
+
+
+def polish_with_cloud(content: str, timeout: int = 60) -> Optional[str]:
+    """
+    Polish analysis content using a cloud model (Gemini Flash).
+    Returns polished content, or None if no API key or on failure.
+    """
+    api_key = os.getenv("ANALYZE_YOUTUBE_GEMINI_KEY")
+    if not api_key or api_key == "your_key_here":
+        logger.warning("GEMINI_API_KEY not set. Skipping polish step.")
+        return None
+    
+    try:
+        import litellm
+        
+        polish_prompt = """You are an editor cleaning up an AI-generated analysis document. 
+
+Fix the following issues WITHOUT changing the structure or meaning:
+1. Fix obvious typos (e.g., "Cloud Code" should be "Claude Code")
+2. Tighten verbose sentences
+3. Remove any remaining AI meta-commentary (phrases like "I will now..." or "Let me...")
+4. Ensure consistent formatting
+
+Return ONLY the cleaned markdown. Do not add commentary.
+
+DOCUMENT TO POLISH:
+"""
+        
+        response = litellm.completion(
+            model="gemini/gemini-2.0-flash",
+            messages=[{"role": "user", "content": polish_prompt + content}],
+            api_key=api_key,
+            timeout=timeout,
+        )
+        
+        polished = response.choices[0].message.content
+        logger.info("Polish step completed successfully.")
+        return polished.strip()
+        
+    except ImportError:
+        logger.warning("litellm not installed. Run: uv pip install litellm")
+        return None
+    except Exception as e:
+        logger.warning(f"Polish step failed: {e}. Using unpolished content.")
+        return None

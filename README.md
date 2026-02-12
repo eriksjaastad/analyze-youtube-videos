@@ -1,3 +1,29 @@
+
+<!-- SCAFFOLD:START - Do not edit between markers -->
+# analyze-youtube-videos
+
+Brief description of the project's purpose
+
+## Quick Start
+
+```bash
+# Setup
+pip install -r requirements.txt
+
+# Run
+python main.py
+```
+
+## Documentation
+
+See the `Documents/` directory for detailed documentation.
+
+## Status
+
+- **Current Phase:** Foundation
+- **Status:** #status/active
+
+<!-- SCAFFOLD:END - Custom content below is preserved -->
 # 📚 YouTube Analysis Agent
 
 > **Status: Production Ready (Gold Standard Certified)**  
@@ -150,50 +176,12 @@ bash scripts/pre_review_scan.sh
 
 ## Related Documentation
 
-- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
-- [[LOCAL_MODEL_LEARNINGS]] - local AI
-- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
-- [[architecture_patterns]] - architecture
-- [[queue_processing_guide]] - queue/workflow
-- [[testing_strategy]] - testing/QA
-- [[video_analysis_tools]] - video analysis
-- [[agent-skills-library/README]] - Agent Skills
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
-- [[project-scaffolding/README]] - Project Scaffolding
-- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
-- [[ai_model_comparison]] - AI models
-- [[research_methodology]] - research
-- [[cost_management]] - cost management
-- [[adult_business_compliance]] - adult industry
-- [[security_patterns]] - security
-
-<!-- project-scaffolding template appended -->
-
-# [PROJECT_NAME]
-
-[Brief 2-3 sentence description of the project.]
-
-## Quick Start
-
-### Installation
-```bash
-# [Add installation steps here]
-```
-
-### Usage
-```bash
-# [Add usage steps here]
-```
-
-## Documentation
-See the `Documents/` directory for detailed documentation:
-- [Architecture Overview](Documents/ARCHITECTURE_OVERVIEW.md)
-- [Operations Guide](Documents/OPERATIONS_GUIDE.md)
-
-## Development Resources
-- [[analyze-youtube-videos/tests/__init__.py|__init__.py]]
-- [[analyze-youtube-videos/scripts/warden_audit.py|warden_audit.py]]
-
-## Status
-- **Current Phase:** [Phase Name]
-- **Status:** #status/active
+- [Doppler Secrets Management](Documents/reference/DOPPLER_SECRETS_MANAGEMENT.md) - secrets management
+- [Local Model Learnings](Documents/reference/LOCAL_MODEL_LEARNINGS.md) - local AI
+- [Agent Skills Library](../agent-skills-library/README.md) - Agent Skills
+- [README](README) - YouTube Analyzer
+- [Project Scaffolding](../project-scaffolding/README.md) - Project Scaffolding
+- [Code Review Anti-Patterns](Documents/reference/CODE_REVIEW_ANTI_PATTERNS.md) - code review
+- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
+- [Cost Management](Documents/reference/MODEL_COST_COMPARISON.md) - cost management
+- [Safety Systems](patterns/safety-systems.md) - security

@@ -6,30 +6,14 @@
 
 ---
 
-## 🚨 CRITICAL FINDING: Workers Cannot Execute Commands (Jan 12, 2026)
+## 🚨 CRITICAL: Workers Cannot Execute Commands (Jan 12, 2026)
 
-**Discovery:** Local models (Workers via Ollama MCP) are text-generation engines only. They do NOT have shell access and cannot execute bash commands (`cp`, `sed`, `chmod`, `mv`, `rm`). They only output text which the Floor Manager then writes to files or executes as commands.
+Workers (Ollama local models) can only generate text. They CANNOT:
+- Execute bash commands
+- Write files directly
+- Run cp, sed, chmod, etc.
 
-**What we thought was happening:**
-- Worker receives prompt → Worker executes `cp` or `chmod` → Worker verifies
-
-**What was ACTUALLY happening:**
-- Worker receives prompt → Worker outputs bash script TEXT → Floor Manager (human or high-fidelity AI like Gemini) was expected to execute it.
-- **Problem:** Floor Manager was trying to pass these shell tasks *back* to Workers, leading to a loop of failure.
-
-**Why this matters:**
-- Workers can only generate text output.
-- Any prompt asking Workers to "run", "execute", "copy", or "modify permissions" will fail.
-- Floor Manager must be the one to physically perform file I/O and shell execution.
-
-**Impact:**
-- **Protocol Shift:** Workers are for **Code Generation** and **Logic** only.
-- **Floor Manager Role:** Floor Manager is the **Primary File Operator**. FM handles all `cp`, `mv`, `chmod`, and `sed` operations.
-- **Prompt Design:** Stop wrapping file operations in AI prompt ceremonies. Use bash for file ops, AI for intelligence.
-
-**Status:** RESOLVED - Protocol updated in `AGENTS.md`.
-
-**New Rule:** If a bash one-liner can do it, don't prompt a Worker. Floor Manager executes directly.
+All file operations must be done by Floor Manager directly.
 
 ---
 
@@ -525,14 +509,10 @@ Things to try or investigate:
 
 ## Related Documentation
 
-- [[LOCAL_MODEL_LEARNINGS]] - local AI
-- [[PROJECT_STRUCTURE_STANDARDS]] - project structure
-- [[cost_management]] - cost management
-- [[prompt_engineering_guide]] - prompt engineering
-- [[ai_model_comparison]] - AI models
-- [[case_studies]] - examples
-- [[orchestration_patterns]] - orchestration
-- [[performance_optimization]] - performance
-- [[security_patterns]] - security
-- [[testing_strategy]] - testing/QA
-- [[project-tracker/README]] - Project Tracker
+- [Local Model Learnings](Documents/reference/LOCAL_MODEL_LEARNINGS.md) - local AI
+- [Cost Management](Documents/reference/MODEL_COST_COMPARISON.md) - cost management
+- [Tiered AI Sprint Planning](patterns/tiered-ai-sprint-planning.md) - prompt engineering
+- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
+- [AI Team Orchestration](patterns/ai-team-orchestration.md) - orchestration
+- [Safety Systems](patterns/safety-systems.md) - security
+- [project-tracker/README](../../../ai-model-scratch-build/README.md) - Project Tracker

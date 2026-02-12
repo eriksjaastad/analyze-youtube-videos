@@ -1,4 +1,8 @@
-# CLAUDE.md - analyze-youtube-videos
+---
+trigger: always_on
+---
+
+# Antigravity Rules for analyze-youtube-videos
 
 <!-- AGENTSYNC:START - Do not edit between markers -->
 <!-- To modify synced rules: Edit .agentsync/rules/*.md, then run: -->

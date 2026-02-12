@@ -31,10 +31,11 @@ All critical issues from v1/v2 have been resolved. The codebase now passes Gate 
 
 **Before (v2):**
 ```python
-# librarian.py - UNSAFE
+# librarian.py - UNSAFE (shutil.rmtree removed in v3)
 finally:
     if unique_temp.exists():
-        shutil.rmtree(unique_temp)
+        # [REMOVED: shutil.rmtree]
+        pass
 ```
 
 **After (v3) - `librarian.py:54`:**
@@ -207,12 +208,7 @@ There are no remaining blockers. Not even style nits.
 
 ## Related Documentation
 
-- [[CODE_REVIEW_ANTI_PATTERNS]] - code review
-- [[DOPPLER_SECRETS_MANAGEMENT]] - secrets management
-- [[error_handling_patterns]] - error handling
-- [[ai_model_comparison]] - AI models
-- [[deployment_patterns]] - deployment
-- [[research_methodology]] - research
-- [[testing_strategy]] - testing/QA
-- [[video_analysis_tools]] - video analysis
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [Code Review Anti-Patterns](Documents/reference/CODE_REVIEW_ANTI_PATTERNS.md) - code review
+- [Doppler Secrets Management](Documents/reference/DOPPLER_SECRETS_MANAGEMENT.md) - secrets management
+- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
+- [README](README) - YouTube Analyzer

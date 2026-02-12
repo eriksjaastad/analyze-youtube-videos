@@ -123,8 +123,5 @@ yt-dlp \
 
 ## Related Documentation
 
-- [[database_setup]] - database
-- [[queue_processing_guide]] - queue/workflow
-- [[case_studies]] - examples
 - [[video_analysis_tools]] - video analysis
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [README](README) - YouTube Analyzer

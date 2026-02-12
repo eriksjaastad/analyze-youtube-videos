@@ -437,13 +437,9 @@ This turns competitive research from a weeks-long manual process into a few hour
 
 ## Related Documentation
 
-- [[automation_patterns]] - automation
-- [[database_schema]] - database design
-- [[database_setup]] - database
-- [[ai_model_comparison]] - AI models
-- [[case_studies]] - examples
-- [[performance_optimization]] - performance
+- [Automation Reliability](patterns/automation-reliability.md) - automation
+- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
 - [[research_methodology]] - research
 - [[video_analysis_tools]] - video analysis
-- [[agent-skills-library/README]] - Agent Skills
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
+- [Agent Skills Library](../agent-skills-library/README.md) - Agent Skills
+- [README](README) - YouTube Analyzer

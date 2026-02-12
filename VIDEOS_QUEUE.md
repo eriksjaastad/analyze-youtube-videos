@@ -2,33 +2,16 @@
 
 **Purpose:** Track YouTube videos to analyze - add URLs here and we'll download metadata + transcripts
 
-**Last Updated:** January 5, 2026
+**Last Updated:** January 25, 2026
 
 ---
 
 ## How to Use This File
 
 1. **Add video URL** to "To Analyze" section below
-2. **Run the download command** (provided below)
-3. **AI will parse** metadata and transcript
-4. **Video moves** to "Analyzed" section with date
-
----
-
-## Quick Download Command
-
-```bash
-# Download single video metadata + transcript
-yt-dlp \
-  --skip-download \
-  --write-auto-sub \
-  --write-info-json \
-  --sub-format vtt \
-  --output "data/%(uploader)s/%(title)s.%(ext)s" \
-  [VIDEO_URL]
-```
-
-Or just paste the URL and ask AI: "Download and analyze this video"
+2. **Run the Librarian:** `uv run scripts/librarian.py [URL]`
+3. **AI will analyze** and save professional report to `library/`
+4. **Video moves** to "Analyzed" section automatically
 
 ---
 
@@ -36,7 +19,14 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 
 ### Priority Queue
 
-<!-- Add new video URLs here -->
+<!-- Videos to re-analyze with improved prompt -->
+https://youtu.be/7fltOAg8ZGI?si=OyKGoIIixRAf0jZE
+https://youtu.be/rPAKq2oQVBs?si=E2sxpRQrOkFOf7HG
+https://youtu.be/oW4hgB1vIoY?si=z4WHCsxQFWuqn7aJ - trading - reinforcement learning - be sure to include info about PPO model (Proximal Policy Optimization)
+https://youtu.be/1jlKUxqRQAw?si=KqBqj6LBISWJR1Bj claude teams
+https://youtu.be/ZcIqiLLT7Fg?si=Rwv5Cl39vUQZFj3E install open clawd
+https://youtu.be/2KWhHY0KTMk?si=FiZ1Ymgb7sdT7gtN open claw wit local models
+
 
 ### Backlog
 
@@ -47,175 +37,135 @@ Or just paste the URL and ask AI: "Download and analyze this video"
 ---
 
 ## Videos Analyzed
-- [x] **"The Claude Code Feature Senior Engineers KEEP MISSING"** by IndyDevDan
-  - **Date analyzed:** 2026-01-20
-  - **URL:** https://youtu.be/u5GkG71PkR0?si=EiOfWFzYuZp0wUb3
-  - **Location:** `library/2026-01-19_indydevdan_the-claude-code-feature-senior-engineers_u5gkg71p.md`
+- [x] **"Claude Code Task System: ANTI-HYPE Agentic Coding (Advanced)"** by IndyDevDan
+  - **Date analyzed:** 2026-02-02
+  - **URL:** https://youtu.be/4_2j5wgt_ds
+  - **Location:** `library/2026-02-02_indydevdan_claude-code-task-system-anti-hype-agenti_4_2j5wgt.md`
 
-- [x] **"Use Local LLMs Already!"** by The Art Of The Terminal
-  - **Date analyzed:** 2026-01-19
-  - **URL:** https://youtu.be/pfxgLX-MxMY?si=pw-Qf1Wrje7U6Wdu
-  - **Location:** `library/2026-01-08_the-art-of-the-terminal_use-local-llms-already_pfxglx-m.md`
+- [x] **"End-to-End (small) LLM Fine-tuning Tutorial (from data to model to live demo) | On DGX Spark"** by Daniel Bourke
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/2hoNAr-id-E
+  - **Location:** `library/2026-01-09_daniel-bourke_end-to-end-small-llm-fine-tuning-tutoria_2honar-i.md`
 
-- [x] **"Making $$$ with AI SaaS (I might delete this)"** by David Ondrej
-  - **Date analyzed:** 2026-01-19
-  - **URL:** https://youtu.be/nS62guAxeGA?si=t80klFo7QULA8FQQ
-  - **Location:** `library/2026-01-17_david-ondrej_making-with-ai-saas-i-might-delete-this_ns62guax.md`
+- [x] **"The Ultimate Local AI Coding Guide For 2026"** by Zen van Riel
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/rp5EwOogWEw
+  - **Location:** `library/2025-10-21_zen-van-riel_the-ultimate-local-ai-coding-guide-for-2_rp5ewoog.md`
 
-- [x] **"Antigravity Advanced Tutorial Easy Tutorial"** by Mikey Itua
-  - **Date analyzed:** 2026-01-17
-  - **URL:** https://youtu.be/-X0WvsUdMjQ?si=JbQh2rLoQQaFJ58K
-  - **Location:** `library/2026-01-14_mikey-itua_antigravity-advanced-tutorial-easy-tutor_-x0wvsud.md`
-
-- [x] **"Antigraviy Rules and Workflows"** by George Alonge
-  - **Date analyzed:** 2026-01-17
-  - **URL:** https://youtu.be/7tzgiTAxjjI?si=8_Y2cAkIYfHmWeGu
-  - **Location:** `library/2025-12-02_george-alonge_antigraviy-rules-and-workflows_7tzgitax.md`
-
-- [x] **"Stop Competing With 400 Applicants. Build This in One Weekend (Yes, there's a  no code option too!)"** by AI News & Strategy Daily | Nate B Jones
-  - **Date analyzed:** 2026-01-17
-  - **URL:** https://youtu.be/0teZqotpqT8?si=6e8rTEBOKQf5u45q
-  - **Location:** `library/2026-01-16_ai-news-strategy-daily-nate-b-jones_stop-competing-with-400-applicants-build_0tezqotp.md`
-
-- [x] **"DON'T build AI automations, build agentic workflows! (Google Antigravity)"** by Duncan Rogoff | AI Automation
-  - **Date analyzed:** 2026-01-16
-  - **URL:** https://youtu.be/7U6pKex9tbE?si=H-NeavipzSjKwy8n
-  - **Location:** `library/2026-01-05_duncan-rogoff-ai-automation_dont-build-ai-automations-build-agentic-_7u6pkex9.md`
-
-- [x] **"Agentic Design Systems in 2026 with Brad Frost"** by Chromatic
-  - **Date analyzed:** 2026-01-13
-  - **URL:** https://youtu.be/Vg78K3t9KYc?si=iODz3nDW3BDXhCzu
-  - **Location:** `library/2025-12-11_chromatic_agentic-design-systems-in-2026-with-brad_vg78k3t9.md`
-
-- [x] **"Claude Code's Creator Does This Before Every Single Project"** by AI LABS
-  - **Date analyzed:** 2026-01-13
-  - **URL:** https://youtu.be/B-UXpneKw6M?si=XeC9WDqV_ae-2UKX
-  - **Location:** `library/2026-01-09_ai-labs_claude-codes-creator-does-this-before-ev_b-uxpnek.md`
-
-- [x] **"The Only Claude Code Skill You Need"** by Aniket Panjwani
-  - **Date analyzed:** 2026-01-07
-  - **URL:** https://youtu.be/MMpaPV3KMFI?si=WTIxum75wOdEyJHk
-  - **Location:** `library/2026-01-07_Aniket_Panjwani_The-Only-Claude-Code-Skill-You-Need_MMpaPV3K.md`
-
-- [x] **"Claude Agent SDK [Full Workshop] — Thariq Shihipar, Anthropic"** by AI Engineer
-  - **Date analyzed:** 2026-01-07
-  - **URL:** https://youtu.be/TqC1qOfiVcQ?si=T_qkyvwFjuSOUN5z
-  - **Location:** `library/2026-01-05_AI_Engineer_Claude-Agent-SDK-Full-Workshop-Thariq-Sh_TqC1qOfi.md`
-
-- [x] **"Claude Code Skills vs MCPs: Complete Beginner's Guide 2026"** by Aniket Panjwani
-  - **Date analyzed:** 2026-01-06
-  - **URL:** https://youtu.be/42nz2FfKA9A?si=v5Cn0w_p4mm0HY0-
-  - **Location:** `library/2026-01-05_Aniket_Panjwani_Claude-Code-Skills-vs-MCPs-Complete-Beginners-Guid.md`
-
-- [x] **"Give me 9 Min, Become Dangerously Good at Gemini 3.0 Pro"** by Parker Prompts
-  - **Date analyzed:** 2026-01-06
-  - **URL:** https://youtu.be/tTplmSnPIHQ?si=wigSqJWTVHOd3skL
-  - **Location:** `library/2026-01-03_Parker_Prompts_Give-me-9-Min-Become-Dangerously-Good-at-Gemini-30.md`
-
-- [x] **"AWS re:Invent 2025 - Building Scalable, Self-Orchestrating AI Workflows with A2A and MCP (DEV415)"** by AWS Events
-  - **Date analyzed:** 2026-01-06
-  - **URL:** https://youtu.be/9O9zZ1lQWiI?si=lpZqKLK2591dFkDy
-  - **Location:** `library/2025-12-03_AWS_Events_AWS-reInvent-2025-Building-Scalable-Self-Orchestra.md`
-
-- [x] **"The Creator of Claude Code Shares His Exact Setup"** by Aniket Panjwani
-  - **Date analyzed:** 2026-01-06
-  - **URL:** https://youtu.be/eSB79p_CPQQ?si=DohxHGfg8qcGfHeR
-  - **Location:** `library/2026-01-06_Aniket_Panjwani_The-Creator-of-Claude-Code-Shares-His-Exact-Setup.md`
+- [x] **"I Lost Over Half My Body Fat DOING THIS!"** by Renaissance Periodization
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/S8UfefiAwD8
+  - **Location:** `library/2025-12-31_renaissance-periodization_i-lost-over-half-my-body-fat-doing-this_s8ufefia.md`
 
 - [x] **"A Deepdive on my Personal AI Infrastructure (PAI v2.0, December 2025)"** by Unsupervised Learning
-  - **Date analyzed:** 2026-01-06
-  - **URL:** https://youtu.be/Le0DLrn7ta0?si=vVgYHhFkMzQQn7de
-  - **Location:** `library/2025-12-16_Unsupervised_Learning_A-Deepdive-on-my-Personal-AI-Infrastructure-PAI-v2.md`
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/Le0DLrn7ta0
+  - **Location:** `library/2025-12-16_unsupervised-learning_a-deepdive-on-my-personal-ai-infrastruct_le0dlrn7.md`
 
+- [x] **"The Creator of Claude Code Shares His Exact Setup"** by Aniket Panjwani
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/eSB79p_CPQQ
+  - **Location:** `library/2026-01-06_aniket-panjwani_the-creator-of-claude-code-shares-his-ex_esb79p_c.md`
 
-### Aniket Panjwani
-- [x] **"Claude Code Skills vs MCPs: Complete Beginner's Guide"**
-  - **Date analyzed:** January 5, 2026
+- [x] **"AWS re:Invent 2025 - Building Scalable, Self-Orchestrating AI Workflows with A2A and MCP (DEV415)"** by AWS Events
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/9O9zZ1lQWiI
+  - **Location:** `library/2025-12-03_aws-events_aws-reinvent-2025-building-scalable-self_9o9zz1lq.md`
+
+- [x] **"Give me 9 Min, Become Dangerously Good at Gemini 3.0 Pro"** by Parker Prompts
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/tTplmSnPIHQ
+  - **Location:** `library/2026-01-03_parker-prompts_give-me-9-min-become-dangerously-good-at_ttplmsnp.md`
+
+- [x] **"Claude Code Skills vs MCPs: Complete Beginner's Guide 2026"** by Aniket Panjwani
+  - **Date analyzed:** 2026-01-25
   - **URL:** https://youtu.be/42nz2FfKA9A
-  - **Location:** `library/2026-01-05_Aniket_Panjwani_Claude-Code-Skills-vs-MCPs-Complete-Beginners-Guid.md`
+  - **Location:** `library/2026-01-05_aniket-panjwani_claude-code-skills-vs-mcps-complete-begi_42nz2ffk.md`
 
-### Renaissance Periodization
-- [x] **"I Lost Over Half My Body Fat DOING THIS"**
-  - **Date analyzed:** January 5, 2026
-  - **URL:** https://youtu.be/S8UfefiAwD8
-  - **Location:** `library/2025-12-31_Renaissance_Periodization_I-Lost-Over-Half-My-Body-Fat-DOING-THIS.md`
+- [x] **"Claude Agent SDK [Full Workshop] — Thariq Shihipar, Anthropic"** by AI Engineer
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/TqC1qOfiVcQ
+  - **Location:** `library/2026-01-05_ai-engineer_claude-agent-sdk-full-workshop-thariq-sh_tqc1qofi.md`
 
-### Testing "The Librarian"
-- [x] **"The Ultimate Local AI Coding Guide For 2026"** by Zen van Riel
-  - **Date analyzed:** January 5, 2026
-  - **URL:** https://youtu.be/rp5EwOogWEw
-  - **Location:** `library/2025-10-21_Zen_van_Riel_The-Ultimate-Local-AI-Coding-Guide-For-2026.md`
+- [x] **"The Only Claude Code Skill You Need"** by Aniket Panjwani
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/MMpaPV3KMFI
+  - **Location:** `library/2026-01-07_aniket-panjwani_the-only-claude-code-skill-you-need_mmpapv3k.md`
 
-### Nick Saraev
-- [x] **"I Reverse Engineered Nick Saraev's YouTube Channel With Claude Code"** by Aniket Panjwani
-  - **Date analyzed:** December 29, 2025
-  - **URL:** *(need to add)*
-  - **Location:** `Documents/archives/sessions/transcript.en.vtt`
-  - **Methodology:** `Documents/core/YouTube_Analysis_Methodology.md`
-  - **Notes:** Source methodology for YouTube analysis skill, 252 videos referenced
+- [x] **"Claude Code's Creator Does This Before Every Single Project"** by AI LABS
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/B-UXpneKw6M
+  - **Location:** `library/2026-01-09_ai-labs_claude-codes-creator-does-this-before-ev_b-uxpnek.md`
 
----
+- [x] **"Agentic Design Systems in 2026 with Brad Frost"** by Chromatic
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/Vg78K3t9KYc
+  - **Location:** `library/2025-12-11_chromatic_agentic-design-systems-in-2026-with-brad_vg78k3t9.md`
 
-## Analysis Status by Creator
+- [x] **"DON'T build AI automations, build agentic workflows! (Google Antigravity)"** by Duncan Rogoff | AI Automation
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/7U6pKex9tbE
+  - **Location:** `library/2026-01-05_duncan-rogoff-ai-automation_dont-build-ai-automations-build-agentic-_7u6pkex9.md`
 
-| Creator | Videos Analyzed | Last Analysis | Notes |
-|---------|----------------|---------------|-------|
-| Nick Saraev (via Aniket) | 1 | Dec 29, 2025 | Methodology video |
+- [x] **"Stop Competing With 400 Applicants. Build This in One Weekend (Yes, there's a  no code option too!)"** by AI News & Strategy Daily | Nate B Jones
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/0teZqotpqT8
+  - **Location:** `library/2026-01-16_ai-news-strategy-daily-nate-b-jones_stop-competing-with-400-applicants-build_0tezqotp.md`
+
+- [x] **"Antigraviy Rules and Workflows"** by George Alonge
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/7tzgiTAxjjI
+  - **Location:** `library/2025-12-02_george-alonge_antigraviy-rules-and-workflows_7tzgitax.md`
+
+- [x] **"Antigravity Advanced Tutorial Easy Tutorial"** by Mikey Itua
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/-X0WvsUdMjQ
+  - **Location:** `library/2026-01-14_mikey-itua_antigravity-advanced-tutorial-easy-tutor_-x0wvsud.md`
+
+- [x] **"Making $$$ with AI SaaS (I might delete this)"** by David Ondrej
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/nS62guAxeGA
+  - **Location:** `library/2026-01-17_david-ondrej_making-with-ai-saas-i-might-delete-this_ns62guax.md`
+
+- [x] **"Use Local LLMs Already!"** by The Art Of The Terminal
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/pfxgLX-MxMY
+  - **Location:** `library/2026-01-08_the-art-of-the-terminal_use-local-llms-already_pfxglx-m.md`
+
+- [x] **"The Claude Code Feature Senior Engineers KEEP MISSING"** by IndyDevDan
+  - **Date analyzed:** 2026-01-25
+  - **URL:** https://youtu.be/u5GkG71PkR0
+  - **Location:** `library/2026-01-19_indydevdan_the-claude-code-feature-senior-engineers_u5gkg71p.md`
+
+
+<!-- Completed analyses will appear here -->
 
 ---
 
 ## Notes
 
-### What Gets Downloaded
-For each video:
-- `video_title.info.json` - Metadata (title, date, views, description, duration, etc.)
-- `video_title.en.vtt` - English transcript/subtitles
+### Running the Librarian
 
-### Where Files Go
-```
-data/
-└── [Creator Name]/
-    ├── Video_Title.info.json
-    ├── Video_Title.en.vtt
-    └── [more videos...]
+```bash
+# Analyze a single video
+uv run scripts/librarian.py https://youtu.be/VIDEO_ID
+
+# Dry run (preview analysis without saving)
+uv run scripts/librarian.py --dry-run https://youtu.be/VIDEO_ID
 ```
 
-### Analysis Options
-1. **Single video analysis** - Quick insights from one video
-2. **Channel analysis** - Download entire channel, run 4-stage pipeline
-3. **Comparison analysis** - Compare multiple creators' approaches
+### What Gets Created
+
+For each video, the Librarian generates:
+- Professional analysis document in `library/`
+- Structured sections: Overview, Key Concepts, Actionable Takeaways, Critical Assessment
+- No transcript dump - just synthesized insights
 
 ### Related Files
-- **Download instructions:** `Documents/reference/TOOLS.md`
 - **Analysis methodology:** `Documents/core/YouTube_Analysis_Methodology.md`
-- **Test prompts:** `Documents/reference/TEST_PROMPT.md`
+- **Librarian script:** `scripts/librarian.py`
 - **Project status:** `TODO.md`
 
 ---
 
-## Video Ideas to Explore
-
-<!-- Keep a running list of interesting videos/channels to potentially analyze -->
-
-### AI & Automation
-- 
-
-### Content Strategy
-- 
-
-### Other
-- 
-
----
-
 *Just paste a YouTube URL and say "add this to the queue" or "analyze this video"*
-
-## Related Documentation
-
-- [[automation_patterns]] - automation
-- [[prompt_engineering_guide]] - prompt engineering
-- [[queue_processing_guide]] - queue/workflow
-- [[ai_model_comparison]] - AI models
-- [[testing_strategy]] - testing/QA
-- [[video_analysis_tools]] - video analysis
-- [[analyze-youtube-videos/README]] - YouTube Analyzer
