@@ -26,7 +26,7 @@ https://youtu.be/oW4hgB1vIoY?si=z4WHCsxQFWuqn7aJ - trading - reinforcement learn
 https://youtu.be/1jlKUxqRQAw?si=KqBqj6LBISWJR1Bj claude teams
 https://youtu.be/ZcIqiLLT7Fg?si=Rwv5Cl39vUQZFj3E install open clawd
 https://youtu.be/2KWhHY0KTMk?si=FiZ1Ymgb7sdT7gtN open claw wit local models
-
+https://youtu.be/f8cfH5XX-XU?si=mO0s_EmZMICU3J_B - New agentic AI open source 
 
 ### Backlog
 

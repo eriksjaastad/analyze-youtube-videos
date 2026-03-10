@@ -16,6 +16,7 @@ status: #status/active
 | [Documents/](Documents/README.md) | 2 | *Auto-generated index. Last updated: 2026-01-24* |
 | [_tools/](_tools/) | 0 | No description available. |
 | [library/](library/00_Index_library.md) | 22 | - [[Antigravity Advanced Tutorial Easy Tutorial]] (Mikey Itua) - *Analyzed 2026-01-14* |
+| [skills/](skills/) | 1 | No description available. |
 | [synthesis/](synthesis/) | 1 | No description available. |
 
 ### Files
@@ -35,6 +36,7 @@ status: #status/active
 | [Documents/reference/TEST_PROMPT.md](Documents/reference/TEST_PROMPT.md) | Test Prompt: YouTube Channel Analysis Skill |
 | [Documents/reference/TOOLS.md](Documents/reference/TOOLS.md) | Tool Installation Guide |
 | [README.md](README.md) | 📚 YouTube Analysis Agent |
+| [REVIEWS_AND_GOVERNANCE_PROTOCOL.md](REVIEWS_AND_GOVERNANCE_PROTOCOL.md) | This file is managed by sync_governance.py and will be OVERWRITTEN on the next sync. |
 | [VIDEOS_QUEUE.md](VIDEOS_QUEUE.md) | Videos Queue |
 | [library/00_Index_Library.md](library/00_Index_Library.md) | - [[Antigravity Advanced Tutorial Easy Tutorial]] (Mikey Itua) - *Analyzed 2026-01-14* |
 | [library/2025-10-21_zen-van-riel_the-ultimate-local-ai-coding-guide-for-2_rp5ewoog.md](library/2025-10-21_zen-van-riel_the-ultimate-local-ai-coding-guide-for-2_rp5ewoog.md) | **Duration:** 36:02 |
@@ -59,6 +61,7 @@ status: #status/active
 | [library/2026-02-02_indydevdan_claude-code-task-system-anti-hype-agenti_4_2j5wgt.md](library/2026-02-02_indydevdan_claude-code-task-system-anti-hype-agenti_4_2j5wgt.md) | **Duration:** 28:26 |
 | [library/index.yaml](library/index.yaml) | No description available. |
 | [requirements.txt](requirements.txt) | No description available. |
+| [skills/youtube-channel-analysis.md](skills/youtube-channel-analysis.md) | > **Adapter for:** `playbooks/youtube-channel-analysis/` |
 | [synthesis/2026-01-06_AI_Orchestration_Patterns.md](synthesis/2026-01-06_AI_Orchestration_Patterns.md) | Master Strategy: AI Orchestration Patterns |
 
 <!-- LIBRARIAN-INDEX-END -->

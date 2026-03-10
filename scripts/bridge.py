@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
-from scripts.config import GLOBAL_LIBRARY_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment, safe_slug, logger
+from scripts.config import LOCAL_SKILLS_PATH, run_ollama_command, validate_json_data, initialize_directories, check_environment, safe_slug, logger
 
 def call_ollama(prompt: str) -> Optional[str]:
     """Standardized Ollama CLI call."""
@@ -68,41 +68,39 @@ def evaluate_utility(skill_name: str, context: str) -> Optional[str]:
 def generate_templates(skill_name: str, evaluation: str, context: str) -> Optional[Dict[str, str]]:
     """Use Ollama to generate the actual file contents based on the evaluation and context."""
     prompt = f"""
-    Generate three files for a new skill called "{skill_name}".
+    Generate a Claude Code skill file for a new skill called "{skill_name}".
     Use the following evaluation and research context to populate the details.
-    
+
     Evaluation:
     {evaluation}
-    
+
     Research Context:
     {context}
-    
-    FILES TO GENERATE:
-    
-    1. SKILL.md (Claude Adapter)
-    Follow this format:
-    # Claude Skill: [Name]
-    > Adapter for: playbooks/[slug]/
-    > Version: 1.0.0
-    ## Skill Overview
-    ... (What it does, when to activate, activation prompt)
-    
-    2. RULE.md (Cursor Rule)
-    Follow this format:
-    # Cursor Rule: [Name]
-    ## Quick Reference
-    ... (Playbook location, how to use in Cursor, progress updates)
-    
-    3. README.md (Canonical Playbook)
-    Follow this format:
-    # [Name] Playbook
-    ## What This Skill Does
-    ## The Process (Step by step)
-    ## Best Practices
-    
-    Output the result as a raw JSON object with keys "SKILL_MD", "RULE_MD", and "README_MD". 
-    Do NOT use markdown code blocks like ```json ... ```. Just output the raw JSON string starting with {{ and ending with }}.
-    Ensure all three fields contain the full content of the files as described.
+
+    FILE TO GENERATE:
+
+    SKILL.md (Claude Code Skill)
+    Must start with YAML frontmatter:
+    ---
+    name: [slug-name]
+    description: [One line that tells Claude when to activate this skill]
+    ---
+
+    Then include:
+    ## When to Activate
+    (User signals and context requirements)
+
+    ## Process
+    (Step by step instructions)
+
+    ## Output Format
+    (Expected output structure)
+
+    ## Constraints
+    (Rules and guardrails)
+
+    Output the result as a raw JSON object with key "SKILL_MD".
+    Do NOT use markdown code blocks. Just output the raw JSON string starting with {{ and ending with }}.
     """
     
     response = call_ollama(prompt)
@@ -203,28 +201,22 @@ def main() -> None:
         logger.error(error_msg)
         return
 
-    # Prepare paths with traversal guards
+    # Write skill to project-local skills/ directory
     slug = safe_slug(args.skill)
-    skill_dir = (GLOBAL_LIBRARY_PATH / "claude-skills" / slug).resolve()
-    rule_dir = (GLOBAL_LIBRARY_PATH / "cursor-rules" / slug).resolve()
-    playbook_dir = (GLOBAL_LIBRARY_PATH / "playbooks" / slug).resolve()
-    
-    # Traversal Guard
-    global_lib_root = GLOBAL_LIBRARY_PATH.resolve()
-    for d in [skill_dir, rule_dir, playbook_dir]:
-        # Path validation: Explicit check that destination directory is valid and within whitelist
-        if not d.resolve().is_relative_to(global_lib_root):
-            logger.error(f"Potential Path Traversal detected: {d}")
-            return
-        d.mkdir(parents=True, exist_ok=True)
-        logger.info(f"📁 Verified directory {d}")
+    skill_path = (LOCAL_SKILLS_PATH / f"{slug}.md").resolve()
 
-    # Atomic Writes
-    atomic_write(skill_dir / "SKILL.md", templates["SKILL_MD"])
-    atomic_write(rule_dir / "RULE.md", templates["RULE_MD"])
-    atomic_write(playbook_dir / "README.md", templates["README_MD"])
-    
-    logger.info(f"✅ Skill '{args.skill}' successfully promoted to production library!")
+    # Traversal Guard
+    skills_root = LOCAL_SKILLS_PATH.resolve()
+    if not skill_path.is_relative_to(skills_root):
+        logger.error(f"Potential Path Traversal detected: {skill_path}")
+        return
+    LOCAL_SKILLS_PATH.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Verified directory {LOCAL_SKILLS_PATH}")
+
+    # Atomic Write
+    atomic_write(skill_path, templates["SKILL_MD"])
+
+    logger.info(f"Skill '{args.skill}' written to {skill_path}")
 
 if __name__ == "__main__":
     main()

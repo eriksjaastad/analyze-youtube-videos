@@ -27,7 +27,7 @@ logger = logging.getLogger("warden")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
 LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
-GLOBAL_LIBRARY_PATH = Path(os.getenv("SKILLS_LIBRARY_PATH", "./agent-skills-library"))
+LOCAL_SKILLS_PATH = Path(os.getenv("LOCAL_SKILLS_PATH", "skills"))
 SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
 
 # Health check cache to minimize CLI latency
@@ -94,13 +94,13 @@ def run_ollama_command(prompt: str, system_prompt: Optional[str] = None, timeout
 
 def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
     """Validate JSON data contains required keys for the global library."""
-    required_keys = {"SKILL_MD", "RULE_MD", "README_MD"}
+    required_keys = {"SKILL_MD"}
     if data is None or not isinstance(data, dict):
         return False, "Validation Failed: Input is not a dictionary."
     
     if not required_keys.issubset(data.keys()):
         missing = required_keys - set(data.keys())
-        return False, f"Validation Failed: Missing required keys: {missing}"
+        return False, f"Validation Failed: Missing required key: {missing}"
     return True, None
 
 def create_temp_dir_name(url: str) -> str:
