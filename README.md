@@ -21,7 +21,7 @@ python main.py
 
 ## Documentation
 
-See the `Documents/` directory for detailed documentation.
+See the `.agent/rules/` directory for detailed documentation.
 
 ## Status
 
@@ -146,8 +146,8 @@ bash scripts/pre_review_scan.sh
 
 ## 📝 Related Documentation
 
-- **Ecosystem Standards**: `Documents/REVIEWS_AND_GOVERNANCE_PROTOCOL.md`
-- **Methodology**: `Documents/core/YouTube_Analysis_Methodology.md`
+- **Ecosystem Standards**: `.agent/rules/governance.md`
+- **Methodology**: `.agent/rules/YouTube_Analysis_Methodology.md`
 - **Skills Library**: Configured via `SKILLS_LIBRARY_PATH` env var.
 
 ---
@@ -181,12 +181,12 @@ bash scripts/pre_review_scan.sh
 
 ## Related Documentation
 
-- [Doppler Secrets Management](Documents/reference/DOPPLER_SECRETS_MANAGEMENT.md) - secrets management
-- [Local Model Learnings](Documents/reference/LOCAL_MODEL_LEARNINGS.md) - local AI
+- [Doppler Secrets Management](../.agent/rules/DOPPLER_SECRETS_MANAGEMENT.md) - secrets management
+- [Local Model Learnings](.agent/rules/local-model-learnings.md) - local AI
 - [Agent Skills Library](../agent-skills-library/README.md) - Agent Skills
 - [README](README) - YouTube Analyzer
 - [Project Scaffolding](../project-scaffolding/README.md) - Project Scaffolding
-- [Code Review Anti-Patterns](Documents/reference/CODE_REVIEW_ANTI_PATTERNS.md) - code review
-- [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
-- [Cost Management](Documents/reference/MODEL_COST_COMPARISON.md) - cost management
+- [Code Review Anti-Patterns](../.agent/rules/CODE_REVIEW_ANTI_PATTERNS.md) - code review
+- [AI Model Cost Comparison](../.agent/rules/MODEL_COST_COMPARISON.md) - AI models
+- [Cost Management](../.agent/rules/MODEL_COST_COMPARISON.md) - cost management
 - [Safety Systems](patterns/safety-systems.md) - security
