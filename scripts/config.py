@@ -1,5 +1,4 @@
 import os
-import subprocess
 import hashlib
 import re
 import shutil
@@ -7,11 +6,6 @@ import logging
 import unicodedata
 from pathlib import Path
 from typing import Optional, Tuple, List
-
-from dotenv import load_dotenv
-
-# Load .env file if present
-load_dotenv()
 
 # --- Logging Configuration ---
 logging.basicConfig(
@@ -24,14 +18,10 @@ logging.basicConfig(
 logger = logging.getLogger("warden")
 
 # --- Configuration Centralization ---
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
 LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
 LOCAL_SKILLS_PATH = Path(os.getenv("LOCAL_SKILLS_PATH", "skills"))
 SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
-
-# Health check cache to minimize CLI latency
-_OLLAMA_HEALTH_VERIFIED = False
 
 def safe_slug(text: str) -> str:
     """
@@ -43,54 +33,6 @@ def safe_slug(text: str) -> str:
     # Replace non-word characters with hyphens and lowercase
     text = re.sub(r'[^\w\s-]', '', text).strip().lower()
     return re.sub(r'[-\s]+', '-', text)
-
-def check_ollama_health() -> bool:
-    """Health check for Ollama CLI responsiveness."""
-    try:
-        subprocess.run(["ollama", "list"], capture_output=True, check=True, timeout=5)
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
-def run_ollama_command(prompt: str, system_prompt: Optional[str] = None, timeout: int = 300) -> str:
-    """
-    Standardized Ollama CLI wrapper.
-    Standardizes all LLM calls to use the local Ollama CLI.
-    """
-    global _OLLAMA_HEALTH_VERIFIED
-    
-    if not _OLLAMA_HEALTH_VERIFIED:
-        if not check_ollama_health():
-            raise RuntimeError("Critical: Ollama is not running. Start it with: ollama serve")
-        _OLLAMA_HEALTH_VERIFIED = True
-
-    # Construct the full prompt for the CLI
-    full_prompt = prompt
-    if system_prompt:
-        full_prompt = f"System: {system_prompt}\n\nUser: {prompt}"
-    
-    cmd = ["ollama", "run", OLLAMA_MODEL, full_prompt]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout)
-        response = result.stdout.strip()
-        
-        # Strip DeepSeek-R1 internal monologue - multiple formats
-        # Format 1: <think>...</think> tags
-        response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
-        # Format 2: Thinking... ...done thinking. plaintext markers
-        response = re.sub(r'Thinking\.\.\..*?\.\.\.done thinking\.', '', response, flags=re.DOTALL | re.IGNORECASE)
-        # Format 3: <Thinking>...</Thinking> or similar variants
-        response = re.sub(r'</?[Tt]hinking>', '', response)
-        
-        return response.strip()
-        
-    except subprocess.TimeoutExpired as e:
-        logger.error(f"Ollama command timed out after {timeout} seconds: {e}")
-        raise RuntimeError(f"Ollama command timed out after {timeout} seconds.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
-        raise RuntimeError(f"Ollama command failed with exit code {e.returncode}: {e.stderr}")
 
 def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
     """Validate JSON data contains required keys for the global library."""
@@ -111,11 +53,12 @@ def create_temp_dir_name(url: str) -> str:
 def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
     """
     Select subtitle file from list of filenames, prioritizing manual over auto.
-    Locale-agnostic regex to catch variants like .en-US.srt and .en-GB.srt.
+    Locale-agnostic regex to catch variants like .en-US.srt, .en-GB.srt, and .vtt files.
+    Supports both SRT and VTT formats (TikTok serves VTT).
     """
-    # Pattern: base_name.LOCALE.srt or base_name.LOCALE.auto.srt
+    # Pattern: base_name.LOCALE.[auto.]srt or base_name.LOCALE.[auto.]vtt
     # Group 1: Locale (e.g., en, en-US), Group 2: .auto/ .auto-subs (optional)
-    pattern = re.compile(rf"^{re.escape(base_name)}\.([a-zA-Z0-9-]+)(\.auto(?:-subs)?)?\.srt$", re.IGNORECASE)
+    pattern = re.compile(rf"^{re.escape(base_name)}\.([a-zA-Z0-9-]+)(\.auto(?:-subs)?)?\.(srt|vtt)$", re.IGNORECASE)
     
     manual_matches = []
     auto_matches = []
@@ -147,23 +90,11 @@ def check_environment() -> bool:
     Proactive health check for critical dependencies and paths.
     Refuses to start if misconfigured.
     """
-    global _OLLAMA_HEALTH_VERIFIED
-    
     # Check yt-dlp
     if not shutil.which("yt-dlp"):
         logger.error("Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
         return False
-        
-    # Check Ollama CLI
-    if not shutil.which("ollama"):
-        logger.error("Critical: Ollama CLI not found in PATH. Install from https://ollama.com.")
-        return False
-        
-    # Check Ollama Service responsiveness
-    if not check_ollama_health():
-        logger.error("Critical: Ollama is not running. Start it with: ollama serve")
-        return False
-    
+
     # Check critical paths and writability
     critical_paths = [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]
     for path in critical_paths:
@@ -177,7 +108,6 @@ def check_environment() -> bool:
             logger.error(f"Critical: Path {path} is not writable or cannot be created: {e}")
             return False
 
-    _OLLAMA_HEALTH_VERIFIED = True
     logger.info("Environment check passed.")
     return True
 
@@ -230,46 +160,3 @@ def apply_replacements(content: str) -> str:
         return content
 
 
-def polish_with_cloud(content: str, timeout: int = 60) -> Optional[str]:
-    """
-    Polish analysis content using a cloud model (Gemini Flash).
-    Returns polished content, or None if no API key or on failure.
-    """
-    api_key = os.getenv("ANALYZE_YOUTUBE_GEMINI_KEY")
-    if not api_key or api_key == "your_key_here":
-        logger.warning("GEMINI_API_KEY not set. Skipping polish step.")
-        return None
-    
-    try:
-        import litellm
-        
-        polish_prompt = """You are an editor cleaning up an AI-generated analysis document. 
-
-Fix the following issues WITHOUT changing the structure or meaning:
-1. Fix obvious typos (e.g., "Cloud Code" should be "Claude Code")
-2. Tighten verbose sentences
-3. Remove any remaining AI meta-commentary (phrases like "I will now..." or "Let me...")
-4. Ensure consistent formatting
-
-Return ONLY the cleaned markdown. Do not add commentary.
-
-DOCUMENT TO POLISH:
-"""
-        
-        response = litellm.completion(
-            model="gemini/gemini-2.0-flash",
-            messages=[{"role": "user", "content": polish_prompt + content}],
-            api_key=api_key,
-            timeout=timeout,
-        )
-        
-        polished = response.choices[0].message.content
-        logger.info("Polish step completed successfully.")
-        return polished.strip()
-        
-    except ImportError:
-        logger.warning("litellm not installed. Run: uv pip install litellm")
-        return None
-    except Exception as e:
-        logger.warning(f"Polish step failed: {e}. Using unpolished content.")
-        return None
