@@ -1,0 +1,3 @@
+setup:
+  project: analyze-youtube-videos
+  config: dev
