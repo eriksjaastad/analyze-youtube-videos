@@ -5,7 +5,6 @@ import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from scripts.librarian import clean_srt, get_video_data
-from scripts.config import run_ollama_command
 
 def test_clean_srt():
     srt_content = """1
@@ -59,28 +58,25 @@ Line 2
 def test_clean_srt_parameterized(srt, expected):
     assert clean_srt(srt) == expected
 
-@patch("subprocess.run")
-def test_run_ollama_command(mock_run):
-    cmd = ["ollama", "run", "deepseek-r1:14b", "test prompt"]
-    # Success case with <think> stripping
-    mock_run.return_value = MagicMock(
-        returncode=0, 
-        stdout="<think>internal monologue</think>Actual response",
-        stderr=""
-    )
-    response = run_ollama_command("test prompt")
-    assert response == "Actual response"
-    assert "<think>" not in response
-    
-    # Timeout case
-    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["ollama"], timeout=300)
-    with pytest.raises(RuntimeError, match="timed out"):
-        run_ollama_command("test prompt")
-    
-    # Failure case
-    mock_run.side_effect = subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr="Error message")
-    with pytest.raises(RuntimeError, match="failed with exit code 1"):
-        run_ollama_command("test prompt")
+def test_clean_srt_vtt_format():
+    """Verify that VTT content (WEBVTT headers, dot timestamps) is properly cleaned."""
+    vtt_content = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:01.000 --> 00:00:02.000
+Hello World
+
+00:00:03.000 --> 00:00:04.000
+This is TikTok.
+"""
+    cleaned = clean_srt(vtt_content)
+    assert "WEBVTT" not in cleaned
+    assert "Kind:" not in cleaned
+    assert "Language:" not in cleaned
+    assert "00:00" not in cleaned
+    assert cleaned == "Hello World This is TikTok."
+
 
 @patch("subprocess.run")
 @patch("tempfile.TemporaryDirectory")
@@ -135,9 +131,8 @@ def test_get_video_data_success(mock_tempdir, mock_mkdir, mock_exists, mock_open
 
     # Inverse Test Analysis:
     # 1. We don't test the actual library file content generated (only its presence and metadata).
-    # 2. We don't test the Ollama prompt generation logic for synthesis.
-    # 3. We don't test the --dry-run flag behavior in these unit tests.
-    # 4. We don't test the actual yt-dlp binary output (only mocked responses).
+    # 2. We don't test the --dry-run flag behavior in these unit tests.
+    # 3. We don't test the actual yt-dlp binary output (only mocked responses).
 
 @patch("subprocess.run")
 @patch("tempfile.TemporaryDirectory")

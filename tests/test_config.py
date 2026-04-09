@@ -9,11 +9,17 @@ def test_validate_json_data():
     assert is_valid is True
     assert error is None
 
-    # Missing keys
+    # Only required key present — should still be valid
     data = {"SKILL_MD": "content"}
     is_valid, error = validate_json_data(data)
+    assert is_valid is True
+    assert error is None
+
+    # Missing required key
+    data = {"OTHER_KEY": "content"}
+    is_valid, error = validate_json_data(data)
     assert is_valid is False
-    assert "Missing required keys" in error
+    assert "Missing required key" in error
 
     # None input
     is_valid, error = validate_json_data(None)
@@ -66,6 +72,17 @@ def test_select_subtitle_priority():
 ])
 def test_create_temp_dir_name_parameterized(url, expected):
     assert create_temp_dir_name(url) == expected
+
+def test_select_subtitle_tiktok_vtt():
+    """Verify TikTok VTT files with eng-US locale are found and prioritized."""
+    base = "transcript"
+    # TikTok VTT file
+    assert select_subtitle(["transcript.eng-US.vtt"], base) == "transcript.eng-US.vtt"
+    # Manual VTT preferred over auto SRT
+    assert select_subtitle(["transcript.eng-US.vtt", "transcript.en.auto.srt"], base) == "transcript.eng-US.vtt"
+    # VTT and SRT manual — alphabetical tiebreak
+    assert select_subtitle(["transcript.en.srt", "transcript.eng-US.vtt"], base) == "transcript.en.srt"
+
 
 def test_validate_json_data_types():
     # Test with unexpected types

@@ -11,7 +11,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from scripts.config import LIBRARY_DIR, TEMP_DIR, run_ollama_command, check_environment, select_subtitle, initialize_directories, safe_slug, logger, polish_with_cloud, apply_replacements
+from scripts.config import LIBRARY_DIR, TEMP_DIR, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
 
 def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_delay: float = 2.0) -> Optional[subprocess.CompletedProcess]:
     """
@@ -71,19 +71,23 @@ def atomic_write(path: Path, content: str) -> None:
 
 def clean_srt(srt_content: str) -> str:
     """
-    Cleans SRT file content by removing indices, timestamps, and deduplicating lines.
+    Cleans SRT/VTT file content by removing indices, timestamps, and deduplicating lines.
+    Handles both SRT (commas in timestamps) and VTT (dots in timestamps) formats.
     Optimized for long-context processing.
     """
     lines = srt_content.splitlines()
     cleaned_lines = []
-    
-    timestamp_pattern = re.compile(r'\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}')
+
+    # Match both SRT (00:00:00,000) and VTT (00:00:00.000) timestamp formats
+    timestamp_pattern = re.compile(r'\d{2}:\d{2}:\d{2}[,.]\d{3} --> \d{2}:\d{2}:\d{2}[,.]\d{3}')
     index_pattern = re.compile(r'^\d+$')
+    # Skip VTT headers and metadata
+    vtt_header_pattern = re.compile(r'^(WEBVTT|Kind:|Language:)', re.IGNORECASE)
     
     last_line = ""
     for line in lines:
         line = line.strip()
-        if not line or index_pattern.match(line) or timestamp_pattern.match(line):
+        if not line or index_pattern.match(line) or timestamp_pattern.match(line) or vtt_header_pattern.match(line):
             continue
         line = re.sub(r'<[^>]+>', '', line)
         if line != last_line:
@@ -236,8 +240,8 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 "--skip-download",
                 "--write-subs",
                 "--write-auto-subs",
-                "--sub-lang", "en",
-                "--sub-format", "srt",
+                "--sub-lang", "en,en-US,en-GB,eng,eng-US,eng-GB",
+                "--sub-format", "srt/vtt/best",
                 "--output", sub_path_base,
                 url
             ]
@@ -247,7 +251,7 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 logger.warning(f"Subtitle fetch command failed for {url}.")
                 logger.debug(f"Stderr: {error_msg}")
             
-            srt_files = [f for f in os.listdir(unique_temp) if f.endswith('.srt')]
+            srt_files = [f for f in os.listdir(unique_temp) if f.endswith(('.srt', '.vtt'))]
             transcript = ""
             target_file = select_subtitle(srt_files, "transcript")
 
@@ -281,9 +285,19 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
             # Extract chapters if available
             chapters = extract_chapters(metadata)
 
+            # Detect platform from URL or extractor
+            extractor = metadata.get("extractor_key", "").lower()
+            if "tiktok" in extractor or "tiktok.com" in url:
+                platform = "tiktok"
+                # TikTok: 'channel' is display name, 'uploader' is handle
+                channel = metadata.get("channel") or metadata.get("uploader") or "Unknown_Channel"
+            else:
+                platform = "youtube"
+                channel = metadata.get("uploader") or "Unknown_Channel"
+
             return {
                 "title": metadata.get("title") or "Untitled",
-                "channel": metadata.get("uploader") or "Unknown_Channel",
+                "channel": channel,
                 "date": metadata.get("upload_date"),
                 "url": url,
                 "video_id": metadata.get("id") or "unknown",
@@ -293,7 +307,8 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 "view_count": metadata.get("view_count") or 0,
                 "like_count": metadata.get("like_count") or 0,
                 "duration_string": metadata.get("duration_string") or "0:00",
-                "chapters": chapters
+                "chapters": chapters,
+                "platform": platform
             }
         except subprocess.TimeoutExpired as e:
             logger.error(f"Subprocess timed out: {e}")
@@ -302,20 +317,15 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
             logger.error(f"Unexpected error in get_video_data: {e}")
             return None
 
-def analyze_with_ollama(data: Dict[str, Any], timeout: int = 600) -> Optional[str]:
-    """
-    Calls local Ollama to analyze the transcript.
-    Returns None on failure to prevent data corruption.
-    """
-    logger.info(f"[*] Analyzing with Ollama CLI (Full Context Enabled)...")
-    
-    prompt = f"""You are a senior technical writer creating a professional analysis document. Your task is to transform a YouTube video transcript into a structured, actionable report.
+def build_tutorial_prompt(data: Dict[str, Any]) -> str:
+    """Build a tutorial-extraction prompt for short-form or long-form video content."""
+    return f"""You are a senior technical writer creating a step-by-step tutorial from a video transcript. Your task is to extract the creator's exact workflow and turn it into reproducible documentation that someone could follow without watching the video.
 
 **VIDEO METADATA**
 - Title: {data['title']}
 - Channel: {data['channel']}
 - Duration: {data['duration_string']}
-- Views: {data['view_count']:,} | Likes: {data['like_count']:,}
+- Platform: {data.get('platform', 'unknown')}
 
 **TRANSCRIPT TO ANALYZE**
 {data['transcript']}
@@ -324,71 +334,69 @@ def analyze_with_ollama(data: Dict[str, Any], timeout: int = 600) -> Optional[st
 
 **YOUR OUTPUT MUST FOLLOW THIS EXACT STRUCTURE:**
 
-## Video Overview
+## Tutorial: [Descriptive title of what you'll learn]
 
 **Source:** "{data['title']}" by {data['channel']}
 **Duration:** {data['duration_string']}
-
-**Core Premise:** [1-2 sentences: What is the main argument or purpose of this video?]
-
----
-
-## Key Concepts & Methodology
-
-[Break down the video into its major sections/concepts. For each:
-- Give it a descriptive heading
-- Explain what was covered in 2-4 bullet points
-- Include any specific tools, techniques, or frameworks mentioned]
+**Difficulty:** [Beginner / Intermediate / Advanced]
 
 ---
 
-## Actionable Takeaways
+## What You'll Build / Achieve
 
-[List 5-10 specific, concrete actions a viewer could take. These should be practical and implementable, not vague advice. Format as a numbered list.]
-
----
-
-## Notable Quotes & Insights
-
-[Extract 3-5 of the most valuable quotes or insights from the video. Include context for why each matters.]
+[1-2 sentences: What is the end result of following this tutorial?]
 
 ---
 
-## Critical Assessment
+## Tools & Resources Required
 
-**Strengths:** [What did this video do well?]
-
-**Limitations:** [What was missing, unclear, or could be improved?]
-
-**Best For:** [Who would benefit most from this video?]
+[Bulleted list of every tool, platform, model, or resource mentioned. For each:
+- **Name** — what it is, whether it's free/paid, and its URL if mentioned
+- Mark which are essential vs. optional]
 
 ---
 
-## Related Concepts
+## Step-by-Step Workflow
 
-[List related topics, tools, or frameworks mentioned that warrant further exploration. Use bullet points with brief descriptions.]
+[This is the core of the tutorial. Break the video into numbered steps. For each step:
+1. **Step title** — what you're doing
+   - Detailed instructions on HOW to do it
+   - Include specific settings, prompts, parameters, or configurations mentioned
+   - Note any tips or warnings the creator gives
+   - If the creator shows a specific prompt or text, quote it exactly]
+
+---
+
+## Pro Tips & Tricks
+
+[Bulleted list of non-obvious techniques, shortcuts, or lessons the creator shares. These are the "insider knowledge" bits that make the tutorial valuable beyond basic steps.]
+
+---
+
+## Common Mistakes to Avoid
+
+[If the creator mentions pitfalls, failures, or things that don't work — list them here. If not mentioned, omit this section entirely.]
+
+---
+
+## Related Workflows
+
+[Brief list of related techniques or next steps the creator mentions or that would logically follow.]
 
 ---
 
 **IMPORTANT RULES:**
-1. Write in clear, professional prose - no filler phrases like "In this video, we will..."
-2. Extract SPECIFIC details (names, tools, numbers, techniques) - not vague summaries
-3. Focus on WHAT the viewer can DO with this information
-4. Do NOT include meta-commentary about your analysis process
-5. Do NOT repeat the transcript - synthesize and distill it
-6. Output ONLY the markdown content - no preamble or explanation
-7. IGNORE sponsor segments and promotional content entirely
-8. SKIP like and subscribe requests and channel/social media plugs
-9. OMIT intro/outro fluff (Hey everyone welcome back, Before we get started)
-10. FOCUS ONLY on substantive educational or informational content
+1. Extract SPECIFIC details — exact tool names, model names, prompt text, settings values
+2. The goal is REPRODUCIBILITY — someone should be able to follow this without watching the video
+3. If the creator uses a specific prompt, quote it verbatim in a code block
+4. Do NOT include meta-commentary about your process
+5. Do NOT pad with generic advice — only include what the creator actually said or showed
+6. IGNORE sponsor segments, like/subscribe requests, and promotional content
+7. Focus on the WORKFLOW — the sequence of actions, not opinions
+8. Output ONLY the markdown content — no preamble or explanation
 
-BEGIN YOUR ANALYSIS:"""
+BEGIN YOUR TUTORIAL EXTRACTION:"""
 
-    try:
-        return run_ollama_command(prompt)
-    except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        return None
 
 def save_to_library(data: Dict[str, Any], analysis: str) -> Path:
     """
@@ -565,70 +573,80 @@ def update_queue(url: str, title: str, channel: str, filepath: Path) -> None:
         atomic_write(queue_file, "".join(new_lines))
         logger.info(f"Updated {queue_file}: Moved to Analyzed.")
 
-def main() -> None:
-    # Proactive Health Check
-    if not check_environment():
-        sys.exit(1)
+def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> List[str]:
+    """
+    Fetches all video URLs from a TikTok or YouTube profile/channel.
+    Returns list of video URLs, optionally limited.
+    """
+    logger.info(f"[*] Fetching video list from profile: {profile_url}")
+    cmd = [
+        "yt-dlp",
+        "--flat-playlist",
+        "--print", "%(webpage_url)s",
+        profile_url
+    ]
+    result = run_with_retry(cmd, timeout=60)
+    if result is None or result.returncode != 0:
+        logger.error("Failed to fetch profile video list.")
+        return []
 
-    # Initialize Directories
-    initialize_directories()
+    urls = [u.strip() for u in result.stdout.strip().splitlines() if u.strip()]
+    logger.info(f"[+] Found {len(urls)} videos on profile")
 
-    parser = argparse.ArgumentParser(description="The Librarian: Extract and analyze YouTube transcripts.")
-    parser.add_argument("url", help="YouTube URL to analyze")
-    parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show analysis")
-    parser.add_argument("--polish", action="store_true", help="Use cloud model (Gemini) to polish the analysis")
-    parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
+    if limit:
+        urls = urls[:limit]
+        logger.info(f"[*] Limited to first {limit} videos")
 
-    args = parser.parse_args()
-    url = args.url
+    return urls
 
-    # URL Guard: Regex check for valid YouTube URL
-    youtube_regex = re.compile(
-        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be)/.+$'
-    )
-    if not youtube_regex.match(url):
-        logger.error(f"Error: \"{url}\" is not a valid YouTube URL.")
-        sys.exit(1)
 
+def process_single_video(url: str, args) -> bool:
+    """
+    Processes a single video URL through the full pipeline.
+    In fetch-only mode, outputs JSON metadata + transcript for external analysis.
+    In save mode (--analysis-file), saves a pre-generated analysis to the library.
+    Returns True on success, False on failure.
+    """
     data = get_video_data(url, use_whisper_fallback=not args.no_whisper)
     if not data:
-        logger.error("Failed to get video data.")
-        sys.exit(1)
-        
-    # Increased timeout for long transcripts
-    analysis = analyze_with_ollama(data, timeout=900)
-    if analysis is None:
-        logger.error("CRITICAL ERROR: Analysis failed. Aborting to prevent library corruption.")
-        sys.exit(1)
-    
-    # Optional polish step with cloud model
-    if args.polish:
-        logger.info("[*] Running polish step with Gemini...")
-        polished = polish_with_cloud(analysis)
-        if polished:
-            analysis = polished
-    
+        logger.error(f"Failed to get video data for: {url}")
+        return False
+
+    # If no analysis file provided, output data as JSON for external analysis (Claude)
+    if not args.analysis_file:
+        import json as _json
+        print(_json.dumps(data, indent=2, ensure_ascii=False))
+        return True
+
+    # Load pre-generated analysis from file
+    analysis_path = Path(args.analysis_file)
+    if not analysis_path.exists():
+        logger.error(f"Analysis file not found: {args.analysis_file}")
+        return False
+
+    with open(analysis_path, "r", encoding="utf-8") as f:
+        analysis = f.read()
+
     # Apply find-replace rules from config/replacements.yaml
     analysis = apply_replacements(analysis)
-        
+
     if args.dry_run:
-        logger.info("--- DRY RUN: Analysis Report ---")
+        logger.info(f"--- DRY RUN: {data['title']} ---")
         logger.info(analysis)
         logger.info("--------------------------------")
-        logger.info("✨ Dry run complete. No files written.")
-        return
+        return True
 
     date_str = data.get('date')
     if date_str and len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
-        
+
     filepath = save_to_library(data, analysis)
-    
+
     # Determine category
     category_info = get_category(data['title'], data.get('tags', []))
-    
+
     # Prepare index entry data
     entry_data = {
         "title": data['title'],
@@ -638,9 +656,90 @@ def main() -> None:
         "category_id": category_info["id"],
         "filepath": str(filepath)
     }
-    
+
     update_queue(url, data['title'], data['channel'], filepath)
     update_index(entry_data)
+    return True
+
+
+def main() -> None:
+    # Initialize Directories
+    initialize_directories()
+
+    parser = argparse.ArgumentParser(description="The Librarian: Extract video transcripts from YouTube and TikTok.")
+    parser.add_argument("url", nargs="?", help="YouTube or TikTok URL to process")
+    parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
+    parser.add_argument("--limit", type=int, help="Limit number of videos to process in batch mode")
+    parser.add_argument("--delay", type=int, default=45, help="Delay in seconds between videos in batch mode (default: 45)")
+    parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show output")
+    parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
+    parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
+
+    args = parser.parse_args()
+
+    # Batch profile mode
+    if args.batch_profile:
+        urls = get_profile_video_urls(args.batch_profile, limit=args.limit)
+        if not urls:
+            logger.error("No videos found on profile.")
+            sys.exit(1)
+
+        # Check which URLs are already in the index to skip duplicates
+        index_yaml_path = LIBRARY_DIR / "index.yaml"
+        existing_urls = set()
+        if index_yaml_path.exists():
+            import yaml
+            with open(index_yaml_path, "r", encoding="utf-8") as f:
+                index_data = yaml.safe_load(f) or {"entries": []}
+            existing_urls = {e.get("url") for e in index_data.get("entries", [])}
+
+        succeeded = 0
+        failed = 0
+        skipped = 0
+        total = len(urls)
+
+        for i, url in enumerate(urls):
+            if url in existing_urls:
+                logger.info(f"[{i+1}/{total}] SKIP (already in library): {url}")
+                skipped += 1
+                continue
+
+            logger.info(f"\n{'='*60}")
+            logger.info(f"[{i+1}/{total}] Processing: {url}")
+            logger.info(f"{'='*60}")
+
+            if process_single_video(url, args):
+                succeeded += 1
+            else:
+                failed += 1
+
+            # Delay between videos (skip delay after last video)
+            if i < total - 1 and args.delay > 0:
+                logger.info(f"[*] Waiting {args.delay}s before next video...")
+                time.sleep(args.delay)
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"BATCH COMPLETE: {succeeded} succeeded, {failed} failed, {skipped} skipped (already in library)")
+        logger.info(f"{'='*60}")
+        return
+
+    # Single URL mode
+    if not args.url:
+        parser.error("Either url or --batch-profile is required")
+
+    url = args.url
+
+    # URL Guard: Regex check for valid YouTube or TikTok URL
+    supported_url_regex = re.compile(
+        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be|tiktok\.com)/.+$'
+    )
+    if not supported_url_regex.match(url):
+        logger.error(f"Error: \"{url}\" is not a valid YouTube or TikTok URL.")
+        sys.exit(1)
+
+    if not process_single_video(url, args):
+        logger.error("CRITICAL ERROR: Processing failed.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

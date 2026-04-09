@@ -77,7 +77,7 @@ Reviewers must verify that code changes do not introduce unrequested destructive
 ### 2. Subprocess Integrity
 Every `subprocess.run` call must follow the **Production Standard**:
 *   `check=True`: Fail loudly on non-zero exit codes.
-*   `timeout=X`: Never allow a subprocess to hang indefinitely (e.g., `yt-dlp` or `ollama` hangs).
+*   `timeout=X`: Never allow a subprocess to hang indefinitely (e.g., `yt-dlp` hangs).
 *   `capture_output=True`: Ensure stdout/stderr are captured for telemetry if a failure occurs.
 
 ### 3. Frontmatter & Schema Validation

@@ -4,11 +4,11 @@ import argparse
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict
-from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, run_ollama_command, initialize_directories, check_environment, logger, safe_slug
+from typing import Optional
+from scripts.config import LIBRARY_DIR, SYNTHESIS_DIR, initialize_directories, check_environment, logger, safe_slug
 
-# Industrial Hardening: Context Ceiling
-MAX_TOKENS = 32000 # Conservative estimate for DeepSeek-R1 local context
+# Industrial Hardening: Context Ceiling for document aggregation
+MAX_TOKENS = 32000
 
 def atomic_write(path: Path, content: str) -> None:
     """Atomic write using a temp file and rename pattern."""
@@ -19,27 +19,11 @@ def atomic_write(path: Path, content: str) -> None:
 
 def summarize_document(filename: str, content: str) -> str:
     """
-    Summarize a single document to fit within context limits.
-    Prevents OOM and truncation during final synthesis.
+    Truncate a document to fit within context limits.
+    Full summarization is handled by Claude during synthesis.
     """
-    logger.info(f"[*] Summarizing {filename} to fit context budget...")
-    prompt = f"""
-Summarize the following technical report for a master synthesis. 
-Extract the most critical architectural patterns, consensus points, and unique insights.
-Keep it concise but high-density.
-
-DOCUMENT: {filename}
-
-CONTENT:
-{content}
-"""
-    try:
-        summary = run_ollama_command(prompt, timeout=300)
-        return f"\n\n--- SUMMARY OF: {filename} ---\n\n{summary}"
-    except Exception as e:
-        logger.error(f"Failed to summarize {filename}: {e}")
-        # Fallback to simple truncation if summarization fails
-        return f"\n\n--- TRUNCATED DOCUMENT: {filename} ---\n\n{content[:2000]}..."
+    logger.info(f"[*] Truncating {filename} to fit context budget...")
+    return f"\n\n--- TRUNCATED DOCUMENT: {filename} ---\n\n{content[:2000]}..."
 
 def aggregate_library(category: Optional[str] = None) -> str:
     """
@@ -89,42 +73,14 @@ def aggregate_library(category: Optional[str] = None) -> str:
 
 def synthesize_knowledge(aggregated_text: str, topic_name: str) -> Optional[str]:
     """
-    Sends the aggregated text to the model for multi-document synthesis.
+    Prepares aggregated text for synthesis.
+    Actual synthesis is performed by Claude (the agent), not by a local model.
+    When run standalone, outputs the aggregated text for Claude to process.
     """
-    logger.info(f"[*] Synthesizing strategy for: {topic_name}...")
-
-    prompt = f"""
-You are "The Strategist," a senior AI systems architect. Your goal is to synthesize multiple deep-dive technical reports into a single, cohesive "Master Strategy" document.
-
-### Aggregated Library Data:
-{aggregated_text}
-
----
-
-### Instructions:
-1. **Identify Consensus Patterns**: Where do these different experts agree?
-2. **Highlight Contradictions**: Where do they disagree or provide different approaches?
-3. **The "Common Truths"**: Distill the most robust, non-obvious principles.
-4. **Actionable Roadmap**: Create a combined workflow or architectural pattern leveraging the best ideas.
-5. **Skill Library Promotion**: Identify the top 3-5 skills that should be prioritized for the global "agent-skills-library".
-
-Generate a structured Markdown report titled: "Master Strategy: {topic_name}".
-Return ONLY the Markdown content.
-"""
-
-    try:
-        clean_response = run_ollama_command(prompt, timeout=600) # Longer timeout for synthesis
-        
-        # Extract markdown if wrapped
-        if "```markdown" in clean_response:
-            clean_response = clean_response.split("```markdown")[1].split("```")[0].strip()
-        elif "```" in clean_response:
-            clean_response = clean_response.split("```")[1].split("```")[0].strip()
-            
-        return clean_response
-    except Exception as e:
-        logger.error(f"Synthesis failed: {e}")
-        return None
+    raise NotImplementedError(
+        "synthesize_knowledge requires an LLM. Run this through Claude Code, not standalone. "
+        "Use: claude 'synthesize strategy for topic X'"
+    )
 
 def main() -> None:
     # Proactive Health Check

@@ -40,10 +40,8 @@ def test_extract_skill_data(mock_open, mock_exists, mock_skill_content):
     result_not_found = extract_skill_data("path", "Other")
     assert result_not_found == mock_skill_content
 
-@patch("scripts.bridge.call_ollama")
-def test_evaluate_utility(mock_call):
+def test_evaluate_utility_raises():
     from scripts.bridge import evaluate_utility
-    mock_call.return_value = "DECISION: [PROMOTE]"
-    result = evaluate_utility("Skill", "Context")
-    assert "DECISION: [PROMOTE]" in result
+    with pytest.raises(NotImplementedError):
+        evaluate_utility("Skill", "Context")
 

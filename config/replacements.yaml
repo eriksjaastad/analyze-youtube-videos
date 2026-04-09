@@ -1,19 +1,69 @@
 # Post-Processing Find & Replace Rules
-# 
-# These are applied after the polish step to fix common transcription errors.
+#
+# These are applied after the analysis step to fix common transcription errors.
 # Add patterns as you discover them across videos.
 #
 # Format:
 #   - find: "incorrect text"
 #     replace: "correct text"
 #     case_sensitive: false  # optional, defaults to false
-#
-# Examples of common transcription errors:
-#   - AI tool names (Cloud Code → Claude Code)
-#   - Technical terms misheard
-#   - Brand names
 
 replacements:
-  # Populate after running the full queue and reviewing patterns
-  # - find: "Cloud Code"
-  #   replace: "Claude Code"
+  # === AI Tool Name Corrections ===
+
+  # Pixverse (lip-sync platform)
+  - find: "Picks Verse"
+    replace: "Pixverse"
+  - find: "PixF First"
+    replace: "Pixverse"
+  - find: "Pix Verse"
+    replace: "Pixverse"
+  - find: "picks verse"
+    replace: "Pixverse"
+    case_sensitive: true
+
+  # Higgsfield (video generation)
+  - find: "Hicksville"
+    replace: "Higgsfield"
+  - find: "Higgs field"
+    replace: "Higgsfield"
+  - find: "Higgs Field"
+    replace: "Higgsfield"
+    case_sensitive: true
+
+  # Seedance / Seedream (video models)
+  - find: "C Dance 1.5"
+    replace: "Seedance 1.5"
+  - find: "Sea Dream"
+    replace: "Seedream"
+  - find: "C Dance"
+    replace: "Seedance"
+
+  # Wan (video model)
+  - find: "One 2.6"
+    replace: "Wan 2.6"
+
+  # ElevenLabs (TTS platform)
+  - find: "11 Labs"
+    replace: "ElevenLabs"
+  - find: "Eleven Labs"
+    replace: "ElevenLabs"
+
+  # Grok (xAI video generation)
+  - find: "Grock"
+    replace: "Grok"
+
+  # Claude Code
+  - find: "Cloud Code"
+    replace: "Claude Code"
+
+  # LumaLabs
+  - find: "Lumarae"
+    replace: "Luma Labs"
+
+  # Nano Banana (Higgsfield feature)
+  # Keeping as-is — this appears to be the actual product name
+
+  # MiniMax
+  - find: "Minimax Design"
+    replace: "MiniMax"

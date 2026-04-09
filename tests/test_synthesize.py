@@ -33,24 +33,9 @@ def test_aggregate_library(mock_open, mock_listdir):
     text_diet = aggregate_library(category="diet")
     assert "2026-01-01_test.md" not in text_diet
 
-@patch("scripts.synthesize.run_ollama_command")
-def test_synthesize_knowledge(mock_run):
-    mock_run.return_value = "```markdown\n# Master Strategy\nResult\n```"
-    result = synthesize_knowledge("aggregated text", "AI")
-    assert "# Master Strategy" in result
-    assert "Result" in result
-
-@patch("scripts.synthesize.run_ollama_command")
-def test_synthesize_knowledge_raw(mock_run):
-    mock_run.return_value = "# Master Strategy\nRaw Result"
-    result = synthesize_knowledge("aggregated text", "AI")
-    assert "Raw Result" in result
-
-@patch("scripts.synthesize.run_ollama_command")
-def test_synthesize_knowledge_timeout(mock_run):
-    mock_run.side_effect = RuntimeError("Ollama command timed out")
-    result = synthesize_knowledge("text", "Topic")
-    assert result is None
+def test_synthesize_knowledge_raises():
+    with pytest.raises(NotImplementedError):
+        synthesize_knowledge("aggregated text", "AI")
 
 @patch("os.listdir")
 @patch("scripts.synthesize.LIBRARY_DIR", new=MagicMock())
