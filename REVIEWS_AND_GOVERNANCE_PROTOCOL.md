@@ -15,7 +15,7 @@ rule: audit in tier order — a Tier 1 defect infects every downstream project
 
 ## Two-Layer Defense
 
-layer_1: Robotic Scan (Gate 0) — pre_review_scan.sh catches hardcoded paths, secrets, silent errors
+layer_1: Robotic Scan (Gate 0) — user-scope code-reviewer subagent + PreToolUse hooks catch hardcoded paths, secrets, silent errors (pre_review_scan.sh wrapper retired in audit Phase F)
 layer_1_rule: single FAIL blocks all further review
 layer_2: Cognitive Audit — judgment-heavy checks automation misses
 layer_2_check: inverse test analysis (what do passing tests NOT check?)
@@ -91,7 +91,7 @@ banned: weak assertions — assert isinstance() or is not None alone is insuffic
 ## Placeholder Integrity (Gate 2)
 
 rule: zero unfilled {{VAR}} patterns in any .md, .py, or .sh files
-check: run scripts/validate_project.py or scripts/audit_all_projects.py
+check: `grep -rE '\{\{[A-Z_]+\}\}' --include='*.md' --include='*.py' --include='*.sh'` (legacy validate_project.py retired in audit Phase F)
 enforcement: single unfilled placeholder triggers Scaffolding Failure alert
 
 ## Silent Failure Prevention
@@ -133,7 +133,7 @@ banned: requirements vanishing without documentation — silent drops are review
 | **M1** | **Robot** | No hardcoded `/Users/` or `/home/` paths | Paste `grep` output (all files) |
 | **M2** | **Robot** | No silent `except: pass` patterns | Paste `grep` output (Python files) |
 | **M3** | **Robot** | No API keys (`sk-...`) in code/templates | Paste `grep` output |
-| **M4** | **Robot** | Zero unfilled `{{VAR}}` placeholders | Paste `validate_project.py` output |
+| **M4** | **Robot** | Zero unfilled `{{VAR}}` placeholders | Paste `grep -rE '\{\{[A-Z_]+\}\}'` output |
 | **P1** | **DNA** | Templates contain no machine-specific data | List files checked in `templates/` |
 | **P2** | **DNA** | `.cursorrules` is portable | Verify path placeholders used |
 | **T1** | **Tests** | Inverse Audit: What do tests MISS? | Map "Dark Territory" |
