@@ -314,7 +314,7 @@ Each phase generates a markdown report:
 
 ---
 
-*Generated using agent-skills-library/playbooks/youtube-channel-analysis v1.0.0*  
+*Generated using youtube-channel-analysis skill v1.0.0*  
 *Analyzed by Claude Sonnet 4.5*
 ```
 

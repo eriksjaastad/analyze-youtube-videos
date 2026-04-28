@@ -28,5 +28,5 @@ This project utilizes several specialized roles implemented as **autonomous scri
 ## 3. The Bridge (scripts/bridge.py)
 **Role**: Skill Promotion
 **Function**: 
-- Evaluates potential skills for promotion to the global `agent-skills-library`.
+- Evaluates potential skills for promotion to the global skills library.
 - Generates Claude Adapters, Cursor Rules, and Playbooks for new skills.
