@@ -441,5 +441,4 @@ This turns competitive research from a weeks-long manual process into a few hour
 - [AI Model Cost Comparison](Documents/reference/MODEL_COST_COMPARISON.md) - AI models
 - [[research_methodology]] - research
 - [[video_analysis_tools]] - video analysis
-- [Agent Skills Library](../agent-skills-library/README.md) - Agent Skills
 - [README](README) - YouTube Analyzer
