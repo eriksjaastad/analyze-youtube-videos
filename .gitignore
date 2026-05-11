@@ -12,3 +12,4 @@ terminals/
 
 .venv/
 .env.doppler-backup
+.scratch/
