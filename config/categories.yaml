@@ -1,7 +1,7 @@
 categories:
-  - id: antigravity
-    name: "🚀 Anti-Gravity & Agentic Workflows"
-    keywords: ["antigravity", "antigraviy", "agentic", "doe", "orchestration", "vibe"]
+  - id: agentic_workflows
+    name: "🚀 Agentic Workflows"
+    keywords: ["agentic", "doe", "orchestration", "vibe"]
   - id: ai_automation
     name: "🤖 AI & Automation"
     keywords: ["ai", "automation", "agent", "llm"]
