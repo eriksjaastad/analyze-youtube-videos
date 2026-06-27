@@ -140,6 +140,28 @@ Cost-capped by both a budget cap and a per-run call cap (default 40 calls ≈ 10
 + criticism beats consensus": the critic routinely catches over-confident agreement built on weak
 evidence. See `auxesis-research-labs/src/auxesis_research_labs/panel/README.md` for full options.
 
+### Opportunity Scan (what's useful to us)
+
+Research has two axes: **"is it true?"** (verification, above) and **"is it useful to us?"** When
+research mode is on, after verifying, run an Opportunity Scan over the *verified* substance to surface
+anything that could improve Erik's projects — **Auxesis weighted first**. Method:
+
+1. **Generalize.** Strip product-hype down to the transferable principle (e.g. not "Hermes uses the
+   Stripe Link CLI" → but "an agent can hold *scoped, human-approved* spending authority via one-time
+   virtual cards").
+2. **Match the portfolio.** Query Open Brain (`pt graph find`, `pt memory search`) per idea to find
+   *genuine* connections to projects and past decisions.
+3. **Cull hard.** Generate candidate opportunities, then an adversarial critic kills the forced,
+   trivial, or already-known ones — the same independence+criticism discipline as the panel. **Most
+   videos should yield zero or one real opportunity; "nothing here for us" is a valid, common result.**
+   A scan that finds gold in every video is broken. (This also honors the no-forced-tie-in rule.)
+4. **Output.** An `## Opportunities for Our Projects` section: ranked *Idea → which project(s) → why
+   it helps → one concrete next step*, plus a short "culled (for discipline)" list. **Report-section
+   only — no auto-filing of cards or brain entries; Erik stays the gate.**
+
+See the Wes Roth Hermes entry in `library/` for a worked example (the standout: NemoClaw's sandbox/
+privacy-routing mapped onto a documented local-model-fallback security risk in data-vault-factory).
+
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
