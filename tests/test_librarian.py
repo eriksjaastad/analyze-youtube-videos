@@ -242,6 +242,14 @@ def test_extract_research_targets_mentions_excludes_emails():
     assert out["mentions"] == ["WesRoth"]
 
 
+def test_extract_research_targets_mentions_preserves_dotted_handles():
+    # The domain filter is TLD-restricted: dotted handles whose suffix is not a
+    # known TLD (Mr.Beast, john.doe) must survive; real domains (brand.io) drop.
+    data = {"description": "Shoutout @Mr.Beast and @john.doe, not @brand.io"}
+    out = extract_research_targets(data)
+    assert out["mentions"] == ["Mr.Beast", "john.doe"]
+
+
 def test_extract_research_targets_chapters_from_metadata():
     data = {"chapters": [{"timestamp": "00:00", "title": "Intro"}, {"timestamp": "02:40", "title": ""}]}
     out = extract_research_targets(data)

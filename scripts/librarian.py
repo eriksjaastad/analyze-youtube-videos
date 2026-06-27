@@ -663,9 +663,20 @@ def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
 _URL_RE = re.compile(r'https?://[^\s<>"\')]+')
 _HASHTAG_RE = re.compile(r'(?<!\w)#(\w+)')
 _MENTION_RE = re.compile(r'(?<!\w)@([A-Za-z0-9_.]+)')
-# A mention candidate that looks like a bare domain (e.g. "smoothmedia.co" from
-# an email address) is not a social handle — drop it.
-_DOMAIN_LIKE_RE = re.compile(r'^[A-Za-z0-9_-]+\.[A-Za-z]{2,}$')
+# A mention candidate shaped like "name.tld" where tld is a common TLD (e.g.
+# "smoothmedia.co" from an email address) is a domain, not a social handle.
+# Restricting to known TLDs preserves legitimate dotted handles like "Mr.Beast".
+_DOMAIN_LIKE_RE = re.compile(r'^[A-Za-z0-9_-]+\.([A-Za-z]{2,})$')
+_COMMON_TLDS = frozenset({
+    "com", "co", "io", "net", "org", "me", "ai", "dev", "app", "tv",
+    "gg", "xyz", "info", "biz", "edu", "gov", "us", "uk", "ca",
+})
+
+
+def _looks_like_domain(handle: str) -> bool:
+    """True if a mention candidate is really a domain/email tail, not a handle."""
+    m = _DOMAIN_LIKE_RE.match(handle)
+    return bool(m) and m.group(1).lower() in _COMMON_TLDS
 
 
 def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -681,8 +692,10 @@ def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
     Returns a dict with:
       - links:    unique URLs from the description, order-preserved
       - hashtags: unique hashtags from description + tags (without '#')
-      - mentions: unique @handles from the description (without '@'); bare
-                  domains from email addresses are filtered out
+      - mentions: unique @handles from the description (without '@'); candidates
+                  shaped like a domain with a common TLD (e.g. "smoothmedia.co"
+                  from an email) are filtered, but dotted handles like "Mr.Beast"
+                  are preserved
       - chapters: author-curated chapter titles (topic markers worth researching)
     """
     description = data.get("description") or ""
@@ -699,7 +712,7 @@ def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
     ))
 
     mentions = list(dict.fromkeys(
-        m for m in _MENTION_RE.findall(description) if not _DOMAIN_LIKE_RE.match(m)
+        m for m in _MENTION_RE.findall(description) if not _looks_like_domain(m)
     ))
 
     chapters = [
