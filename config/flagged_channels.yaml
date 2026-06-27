@@ -1,0 +1,29 @@
+# Flagged channels — sources that warrant heightened fact-checking scrutiny.
+#
+# When the librarian fetches a video whose channel matches an entry here, it emits
+# a prominent FLAG (to logs and in the fetch-only JSON output as a `flag` field).
+# The flag is a signal to Claude/Erik: do NOT take this video's claims at face
+# value — verify anything factual against primary sources before saving analysis.
+#
+# Matching is by stable identifier first (channel_id is immutable across renames),
+# then by @handle, then by case-insensitive display name as a last resort.
+# Prefer channel_id — display names drift and have punctuation/casing variants.
+#
+# To find a channel's IDs:
+#   yt-dlp --no-warnings --skip-download --playlist-items 1 \
+#     --print "%(channel)s|%(channel_id)s|%(uploader_id)s" "<channel or video URL>"
+#
+# severity: one of [watch, caution, high] — purely advisory, surfaced in the flag.
+
+channels:
+  - name: "The Diary Of A CEO"
+    channel_id: "UCGq-a57w-aPwyi3pW7XLiHw"
+    handle: "@TheDiaryOfACEO"
+    severity: high
+    added: 2026-06-26
+    reason: >-
+      Long-form interview podcast (Steven Bartlett) repeatedly criticized for
+      platforming health/medical misinformation — guests make unchallenged,
+      scientifically unsupported claims (cancer, diet, vaccines). Treat all
+      factual/medical assertions as unverified; fact-check against primary
+      sources before recording anything as a takeaway.

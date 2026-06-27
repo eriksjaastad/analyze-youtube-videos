@@ -50,9 +50,27 @@ analyze-youtube-videos/
 │   └── 00_Index_Library.md
 ├── synthesis/             ← Cross-video strategy documents
 ├── config/
-│   └── replacements.yaml  ← Find-replace rules for analysis cleanup
+│   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
+│   └── flagged_channels.yaml  ← Watchlist of low-trust sources (see below)
 └── tests/
 ```
+
+---
+
+## Flagged Channels (Misinformation Watchlist)
+
+Some channels warrant heightened fact-checking scrutiny. `config/flagged_channels.yaml`
+holds a watchlist; on every fetch, the librarian checks the video's channel against it.
+
+- **Matching** is by stable `channel_id` first (immutable across renames), then `@handle`,
+  then a case-insensitive display-name fallback.
+- **On a match**, the librarian prints a prominent `[!!] FLAGGED CHANNEL` warning and adds
+  a `flag` object to the fetch-only JSON output. That `flag` is the signal to **verify every
+  factual claim against primary sources** before writing analysis — do not take the video at
+  face value.
+
+Add a channel by appending an entry (find its IDs with the `yt-dlp --print` snippet in the
+file's header comment). The watchlist is advisory; it never blocks processing.
 
 ---
 

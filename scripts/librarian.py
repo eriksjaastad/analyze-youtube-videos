@@ -298,6 +298,8 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
             return {
                 "title": metadata.get("title") or "Untitled",
                 "channel": channel,
+                "channel_id": metadata.get("channel_id") or "",
+                "uploader_id": metadata.get("uploader_id") or "",
                 "date": metadata.get("upload_date"),
                 "url": url,
                 "video_id": metadata.get("id") or "unknown",
@@ -600,6 +602,52 @@ def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> Lis
     return urls
 
 
+FLAGGED_CHANNELS_PATH = Path("config/flagged_channels.yaml")
+
+
+def check_flagged_channel(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Checks the video's channel against config/flagged_channels.yaml.
+
+    Matches by channel_id (stable across renames), then @handle, then a
+    case-insensitive display-name fallback. Returns the matching flag entry
+    (dict) or None. A missing/unreadable config is treated as "no flags".
+    """
+    try:
+        if not FLAGGED_CHANNELS_PATH.exists():
+            return None
+        with open(FLAGGED_CHANNELS_PATH, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError) as e:
+        logger.warning(f"Could not read {FLAGGED_CHANNELS_PATH}: {e}")
+        return None
+
+    cid = (data.get("channel_id") or "").strip()
+    handle = (data.get("uploader_id") or "").strip().lower()
+    name = (data.get("channel") or "").strip().lower()
+
+    for entry in config.get("channels", []) or []:
+        e_cid = (entry.get("channel_id") or "").strip()
+        e_handle = (entry.get("handle") or "").strip().lower()
+        e_name = (entry.get("name") or "").strip().lower()
+        if (e_cid and cid and e_cid == cid) \
+                or (e_handle and handle and e_handle == handle) \
+                or (e_name and name and e_name == name):
+            return entry
+    return None
+
+
+def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
+    """Print a prominent multi-line warning when a flagged channel is detected."""
+    severity = (entry.get("severity") or "watch").upper()
+    reason = " ".join((entry.get("reason") or "").split())
+    logger.warning("=" * 70)
+    logger.warning(f"[!!] FLAGGED CHANNEL [{severity}]: {data.get('channel')}")
+    logger.warning(f"[!!] {reason}")
+    logger.warning("[!!] FACT-CHECK every factual claim against primary sources before saving.")
+    logger.warning("=" * 70)
+
+
 def process_single_video(url: str, args) -> bool:
     """
     Processes a single video URL through the full pipeline.
@@ -611,6 +659,17 @@ def process_single_video(url: str, args) -> bool:
     if not data:
         logger.error(f"Failed to get video data for: {url}")
         return False
+
+    # Flag known-problematic sources so claims get extra fact-checking scrutiny.
+    flag = check_flagged_channel(data)
+    if flag:
+        emit_flag_warning(flag, data)
+        data["flag"] = {
+            "flagged": True,
+            "severity": flag.get("severity"),
+            "reason": " ".join((flag.get("reason") or "").split()),
+            "name": flag.get("name"),
+        }
 
     # If no analysis file provided, output data as JSON for external analysis (Claude)
     if not args.analysis_file:
