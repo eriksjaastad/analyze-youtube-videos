@@ -663,6 +663,9 @@ def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
 _URL_RE = re.compile(r'https?://[^\s<>"\')]+')
 _HASHTAG_RE = re.compile(r'(?<!\w)#(\w+)')
 _MENTION_RE = re.compile(r'(?<!\w)@([A-Za-z0-9_.]+)')
+# A mention candidate that looks like a bare domain (e.g. "smoothmedia.co" from
+# an email address) is not a social handle — drop it.
+_DOMAIN_LIKE_RE = re.compile(r'^[A-Za-z0-9_-]+\.[A-Za-z]{2,}$')
 
 
 def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -678,7 +681,8 @@ def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
     Returns a dict with:
       - links:    unique URLs from the description, order-preserved
       - hashtags: unique hashtags from description + tags (without '#')
-      - mentions: unique @handles from the description (without '@')
+      - mentions: unique @handles from the description (without '@'); bare
+                  domains from email addresses are filtered out
       - chapters: author-curated chapter titles (topic markers worth researching)
     """
     description = data.get("description") or ""
@@ -694,9 +698,14 @@ def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
         + [str(t).lower() for t in (data.get("tags") or [])]
     ))
 
-    mentions = list(dict.fromkeys(_MENTION_RE.findall(description)))
+    mentions = list(dict.fromkeys(
+        m for m in _MENTION_RE.findall(description) if not _DOMAIN_LIKE_RE.match(m)
+    ))
 
-    chapters = [ch.get("title", "") for ch in (data.get("chapters") or []) if ch.get("title")]
+    chapters = [
+        ch["title"] for ch in (data.get("chapters") or [])
+        if isinstance(ch, dict) and ch.get("title")
+    ]
 
     return {
         "links": links,
@@ -733,8 +742,7 @@ def process_single_video(url: str, args) -> bool:
     if not args.analysis_file:
         # Seed the research pass with a deterministic checklist of what to verify.
         data["research_targets"] = extract_research_targets(data)
-        import json as _json
-        print(_json.dumps(data, indent=2, ensure_ascii=False))
+        print(json.dumps(data, indent=2, ensure_ascii=False))
         return True
 
     # Load pre-generated analysis from file

@@ -235,7 +235,9 @@ def test_extract_research_targets_hashtags_merge_description_and_tags():
 
 
 def test_extract_research_targets_mentions_excludes_emails():
-    data = {"description": "Reach me @WesRoth not at wesroth@smoothmedia.co"}
+    # Both word-preceded (wesroth@...) and space-preceded (@smoothmedia.co) email
+    # domains must be filtered; only the real social handle survives.
+    data = {"description": "Reach me @WesRoth not at wesroth@smoothmedia.co or @smoothmedia.co"}
     out = extract_research_targets(data)
     assert out["mentions"] == ["WesRoth"]
 
@@ -244,6 +246,13 @@ def test_extract_research_targets_chapters_from_metadata():
     data = {"chapters": [{"timestamp": "00:00", "title": "Intro"}, {"timestamp": "02:40", "title": ""}]}
     out = extract_research_targets(data)
     assert out["chapters"] == ["Intro"]
+
+
+def test_extract_research_targets_chapters_tolerates_null_entries():
+    # Real yt-dlp metadata can include null/non-dict chapter entries; must not crash.
+    data = {"chapters": [None, {"title": "Real"}, "bogus", {"no_title": 1}]}
+    out = extract_research_targets(data)
+    assert out["chapters"] == ["Real"]
 
 
 def test_extract_research_targets_empty_metadata():
