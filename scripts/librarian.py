@@ -602,7 +602,18 @@ def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> Lis
     return urls
 
 
-FLAGGED_CHANNELS_PATH = Path("config/flagged_channels.yaml")
+# Anchor to the script's own location so the check works regardless of CWD
+# (the librarian may be invoked from a wrapper, cron job, or test runner).
+FLAGGED_CHANNELS_PATH = Path(__file__).resolve().parent.parent / "config" / "flagged_channels.yaml"
+
+
+def _norm_handle(value: Optional[str]) -> str:
+    """Normalize a channel handle for comparison: lowercase, no leading '@'.
+
+    YouTube's uploader_id arrives with the '@' prefix; TikTok's does not. The
+    watchlist stores handles with '@' for readability, so strip it on both sides.
+    """
+    return (value or "").strip().lstrip("@").lower()
 
 
 def check_flagged_channel(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -623,12 +634,12 @@ def check_flagged_channel(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     cid = (data.get("channel_id") or "").strip()
-    handle = (data.get("uploader_id") or "").strip().lower()
+    handle = _norm_handle(data.get("uploader_id"))
     name = (data.get("channel") or "").strip().lower()
 
     for entry in config.get("channels", []) or []:
         e_cid = (entry.get("channel_id") or "").strip()
-        e_handle = (entry.get("handle") or "").strip().lower()
+        e_handle = _norm_handle(entry.get("handle"))
         e_name = (entry.get("name") or "").strip().lower()
         if (e_cid and cid and e_cid == cid) \
                 or (e_handle and handle and e_handle == handle) \

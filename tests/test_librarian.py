@@ -36,12 +36,21 @@ def test_flagged_channel_matches_by_id(flag_config):
 
 def test_flagged_channel_matches_by_handle(flag_config):
     data = {"channel": "x", "channel_id": "", "uploader_id": "@TheDiaryOfACEO"}
-    assert check_flagged_channel(data) is not None
+    entry = check_flagged_channel(data)
+    assert entry is not None and entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw"
+
+
+def test_flagged_channel_handle_match_ignores_at_prefix(flag_config):
+    # TikTok-style uploader_id arrives without the '@' the config stores.
+    data = {"channel": "x", "channel_id": "", "uploader_id": "thediaryofaceo"}
+    entry = check_flagged_channel(data)
+    assert entry is not None and entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw"
 
 
 def test_flagged_channel_matches_by_name_case_insensitive(flag_config):
     data = {"channel": "the diary of a ceo", "channel_id": "", "uploader_id": ""}
-    assert check_flagged_channel(data) is not None
+    entry = check_flagged_channel(data)
+    assert entry is not None and entry["severity"] == "high"
 
 
 def test_unflagged_channel_returns_none(flag_config):
@@ -52,6 +61,13 @@ def test_unflagged_channel_returns_none(flag_config):
 def test_missing_config_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", tmp_path / "nope.yaml")
     assert check_flagged_channel({"channel": "Anything", "channel_id": "UCx", "uploader_id": "@x"}) is None
+
+
+def test_malformed_config_returns_none(tmp_path, monkeypatch):
+    cfg = tmp_path / "bad.yaml"
+    cfg.write_text("channels: [unclosed\n  - oops:")
+    monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", cfg)
+    assert check_flagged_channel({"channel": "x", "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw", "uploader_id": ""}) is None
 
 def test_clean_srt():
     srt_content = """1
