@@ -659,6 +659,53 @@ def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
     logger.warning("=" * 70)
 
 
+# High-signal patterns for harvesting deterministic research targets.
+_URL_RE = re.compile(r'https?://[^\s<>"\')]+')
+_HASHTAG_RE = re.compile(r'(?<!\w)#(\w+)')
+_MENTION_RE = re.compile(r'(?<!\w)@([A-Za-z0-9_.]+)')
+
+
+def extract_research_targets(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Harvest high-signal, deterministic research targets from video metadata to
+    seed the research pass. This does NOT do the research — it produces a
+    checklist for a research agent to verify and document.
+
+    Semantic targets (named products, companies, factual/numeric claims) are
+    intentionally left to the research agent, which extracts them from the
+    transcript far more reliably than a regex could.
+
+    Returns a dict with:
+      - links:    unique URLs from the description, order-preserved
+      - hashtags: unique hashtags from description + tags (without '#')
+      - mentions: unique @handles from the description (without '@')
+      - chapters: author-curated chapter titles (topic markers worth researching)
+    """
+    description = data.get("description") or ""
+
+    links: List[str] = []
+    for u in _URL_RE.findall(description):
+        u = u.rstrip('.,;')
+        if u and u not in links:
+            links.append(u)
+
+    hashtags = list(dict.fromkeys(
+        [h.lower() for h in _HASHTAG_RE.findall(description)]
+        + [str(t).lower() for t in (data.get("tags") or [])]
+    ))
+
+    mentions = list(dict.fromkeys(_MENTION_RE.findall(description)))
+
+    chapters = [ch.get("title", "") for ch in (data.get("chapters") or []) if ch.get("title")]
+
+    return {
+        "links": links,
+        "hashtags": hashtags,
+        "mentions": mentions,
+        "chapters": chapters,
+    }
+
+
 def process_single_video(url: str, args) -> bool:
     """
     Processes a single video URL through the full pipeline.
@@ -684,6 +731,8 @@ def process_single_video(url: str, args) -> bool:
 
     # If no analysis file provided, output data as JSON for external analysis (Claude)
     if not args.analysis_file:
+        # Seed the research pass with a deterministic checklist of what to verify.
+        data["research_targets"] = extract_research_targets(data)
         import json as _json
         print(_json.dumps(data, indent=2, ensure_ascii=False))
         return True

@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from scripts.librarian import clean_srt, get_video_data, check_flagged_channel
+from scripts.librarian import clean_srt, get_video_data, check_flagged_channel, extract_research_targets
 import scripts.librarian as librarian
 
 
@@ -209,3 +209,43 @@ def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_tempdir, mock_r
     
     data = get_video_data("https://youtube.com/watch?v=fail")
     assert data is None
+
+
+# --- extract_research_targets -------------------------------------------------
+
+def test_extract_research_targets_links_dedup_and_strip():
+    data = {
+        "description": "Watch https://youtube.com/watch?v=abc and https://hostinger.com/x.\n"
+                       "Repeat https://youtube.com/watch?v=abc again. Trailing https://example.com/page,",
+    }
+    out = extract_research_targets(data)
+    # Deduped, order preserved, trailing comma stripped.
+    assert out["links"] == [
+        "https://youtube.com/watch?v=abc",
+        "https://hostinger.com/x",
+        "https://example.com/page",
+    ]
+
+
+def test_extract_research_targets_hashtags_merge_description_and_tags():
+    data = {"description": "Cool stuff #AI #OpenAI", "tags": ["LLM", "ai"]}
+    out = extract_research_targets(data)
+    # Lowercased, deduped across description hashtags and tags.
+    assert out["hashtags"] == ["ai", "openai", "llm"]
+
+
+def test_extract_research_targets_mentions_excludes_emails():
+    data = {"description": "Reach me @WesRoth not at wesroth@smoothmedia.co"}
+    out = extract_research_targets(data)
+    assert out["mentions"] == ["WesRoth"]
+
+
+def test_extract_research_targets_chapters_from_metadata():
+    data = {"chapters": [{"timestamp": "00:00", "title": "Intro"}, {"timestamp": "02:40", "title": ""}]}
+    out = extract_research_targets(data)
+    assert out["chapters"] == ["Intro"]
+
+
+def test_extract_research_targets_empty_metadata():
+    out = extract_research_targets({})
+    assert out == {"links": [], "hashtags": [], "mentions": [], "chapters": []}
