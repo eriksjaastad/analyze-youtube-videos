@@ -106,6 +106,40 @@ documenting rather than repeating at face value. The research layer splits this 
 **Flagged channels (see above) get a mandatory deep pass** — every factual/medical claim is
 treated as unverified until a primary source confirms it.
 
+### Deep Research Mode (multi-model verification)
+
+Research is **opt-in** — by default Erik just wants the video analyzed. When he asks (e.g.
+"also research this", "deep-research this one"), there are two tiers:
+
+- **Single-threaded** (default when asked): Claude gathers web evidence and writes the Research
+  Addendum directly. Fast, no extra cost.
+- **Deep multi-model**: claims are verified by a panel of independent models plus an adversarial
+  critic — for AI-setup or high-stakes claims where one model's blind spots aren't enough.
+
+The deep tier uses the **claim verification panel** that lives in the `auxesis-research-labs`
+project (`src/auxesis_research_labs/panel/claim_panel.py`), where the model keys and dispatch
+harness already are. This keeps *this* project's "no external LLMs in the librarian" rule intact —
+the librarian still only fetches; the panel is a separate, opt-in component.
+
+**Flow:**
+1. Claude extracts the claims from the transcript and gathers web evidence per claim
+   (`WebSearch` / Firecrawl).
+2. Claude writes a `claims.json` (`[{"id", "text", "evidence": [{"source", "snippet"}]}]`).
+3. Run the panel under the auxesis Doppler config:
+   ```bash
+   doppler run -p auxesis-research-labs -c dev -- \
+     uv run scripts/run_claim_panel.py --claims-file claims.json --budget-usd 0.50
+   ```
+   Researcher models (Grok / Gemini / GPT) judge each claim against the shared evidence
+   independently → deterministic vote tally → a different-family critic (Claude) tries to
+   **falsify** the majority (downgrade to `DISPUTED`). Output is per-claim verdicts
+   (`SUPPORTED` / `REFUTED` / `UNVERIFIED` / `DISPUTED`) with reasoning and cost.
+4. Claude folds the verdicts into the report's `## Research Addendum`.
+
+Cost-capped by both a budget cap and a per-run call cap (default 40 calls ≈ 10 claims). "Independence
++ criticism beats consensus": the critic routinely catches over-confident agreement built on weak
+evidence. See `auxesis-research-labs/src/auxesis_research_labs/panel/README.md` for full options.
+
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
