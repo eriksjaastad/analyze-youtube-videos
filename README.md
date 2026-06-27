@@ -34,6 +34,9 @@ uv run scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limi
 - **Standard analysis** — video overview, key concepts, actionable takeaways, critical assessment
 - **Tutorial extraction** — step-by-step reproducible workflow from how-to videos
 
+Both modes carry a **Research Addendum** (see below) whenever the video makes
+external factual claims.
+
 ---
 
 ## Project Structure
@@ -74,7 +77,34 @@ file's header comment). The watchlist is advisory; it never blocks processing.
 
 ---
 
-## Supporting Scripts
+## Research Layer
+
+Videos name-drop products, companies, benchmarks, and claims that are worth verifying and
+documenting rather than repeating at face value. The research layer splits this into a
+**deterministic seed** (code) and a **semantic pass** (agent):
+
+1. **Seed — `extract_research_targets()`.** On every fetch, the librarian adds a
+   `research_targets` block to the JSON output, harvesting the high-signal, deterministic
+   things worth researching:
+   - `links` — every URL in the description (deduped, order-preserved)
+   - `hashtags` — from description + tags
+   - `mentions` — `@handles` from the description (emails excluded)
+   - `chapters` — author-curated chapter titles (topic markers)
+
+   This is a checklist, **not** the research. It never calls the web.
+
+2. **Pass — the research agent.** During analysis, a research sub-agent (or Claude directly)
+   takes the transcript plus `research_targets`, extracts the **named entities and
+   factual/numeric claims** (the model does this far better than a regex), verifies each
+   against primary sources via web search, and writes them up.
+
+3. **Output — the Research Addendum.** Findings land in a `## Research Addendum` section of
+   the saved report: a claim-by-claim verification table (✅/❌ + detail), a "things the
+   video soft-pedals" list, and a `Sources consulted` line with links. See any recent
+   roundup/tutorial entry in `library/` for the format.
+
+**Flagged channels (see above) get a mandatory deep pass** — every factual/medical claim is
+treated as unverified until a primary source confirms it.
 
 | Script | Purpose |
 |--------|---------|

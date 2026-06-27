@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from scripts.librarian import clean_srt, get_video_data, check_flagged_channel
+from scripts.librarian import clean_srt, get_video_data, check_flagged_channel, extract_research_targets
 import scripts.librarian as librarian
 
 
@@ -209,3 +209,60 @@ def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_tempdir, mock_r
     
     data = get_video_data("https://youtube.com/watch?v=fail")
     assert data is None
+
+
+# --- extract_research_targets -------------------------------------------------
+
+def test_extract_research_targets_links_dedup_and_strip():
+    data = {
+        "description": "Watch https://youtube.com/watch?v=abc and https://hostinger.com/x.\n"
+                       "Repeat https://youtube.com/watch?v=abc again. Trailing https://example.com/page,",
+    }
+    out = extract_research_targets(data)
+    # Deduped, order preserved, trailing comma stripped.
+    assert out["links"] == [
+        "https://youtube.com/watch?v=abc",
+        "https://hostinger.com/x",
+        "https://example.com/page",
+    ]
+
+
+def test_extract_research_targets_hashtags_merge_description_and_tags():
+    data = {"description": "Cool stuff #AI #OpenAI", "tags": ["LLM", "ai"]}
+    out = extract_research_targets(data)
+    # Lowercased, deduped across description hashtags and tags.
+    assert out["hashtags"] == ["ai", "openai", "llm"]
+
+
+def test_extract_research_targets_mentions_excludes_emails():
+    # Both word-preceded (wesroth@...) and space-preceded (@smoothmedia.co) email
+    # domains must be filtered; only the real social handle survives.
+    data = {"description": "Reach me @WesRoth not at wesroth@smoothmedia.co or @smoothmedia.co"}
+    out = extract_research_targets(data)
+    assert out["mentions"] == ["WesRoth"]
+
+
+def test_extract_research_targets_mentions_preserves_dotted_handles():
+    # The domain filter is TLD-restricted: dotted handles whose suffix is not a
+    # known TLD (Mr.Beast, john.doe) must survive; real domains (brand.io) drop.
+    data = {"description": "Shoutout @Mr.Beast and @john.doe, not @brand.io"}
+    out = extract_research_targets(data)
+    assert out["mentions"] == ["Mr.Beast", "john.doe"]
+
+
+def test_extract_research_targets_chapters_from_metadata():
+    data = {"chapters": [{"timestamp": "00:00", "title": "Intro"}, {"timestamp": "02:40", "title": ""}]}
+    out = extract_research_targets(data)
+    assert out["chapters"] == ["Intro"]
+
+
+def test_extract_research_targets_chapters_tolerates_null_entries():
+    # Real yt-dlp metadata can include null/non-dict chapter entries; must not crash.
+    data = {"chapters": [None, {"title": "Real"}, "bogus", {"no_title": 1}]}
+    out = extract_research_targets(data)
+    assert out["chapters"] == ["Real"]
+
+
+def test_extract_research_targets_empty_metadata():
+    out = extract_research_targets({})
+    assert out == {"links": [], "hashtags": [], "mentions": [], "chapters": []}
