@@ -155,6 +155,12 @@ anything that could improve Erik's projects — **Auxesis weighted first**. Meth
    trivial, or already-known ones — the same independence+criticism discipline as the panel. **Most
    videos should yield zero or one real opportunity; "nothing here for us" is a valid, common result.**
    A scan that finds gold in every video is broken. (This also honors the no-forced-tie-in rule.)
+   - **Liveness check (mandatory).** Before rating an opportunity, verify the matched project is
+     **still active** and the cited fact is **still current**. A semantic match to a superseded project
+     on a stale Open Brain memory is a false positive — memories reflect when they were written.
+     (Real example: a "HIGH" sandbox risk matched `data-vault-factory`, which is the *pre-Auxesis*
+     factory, superseded; checking Auxesis directly showed the risk didn't exist. The match was stale,
+     not real.)
 4. **Output.** An `## Opportunities for Our Projects` section: ranked *Idea → which project(s) → why
    it helps → one concrete next step*, plus a short "culled (for discipline)" list. **Report-section
    only — no auto-filing of cards or brain entries; Erik stays the gate.**
