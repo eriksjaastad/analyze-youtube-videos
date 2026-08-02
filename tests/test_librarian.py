@@ -266,3 +266,59 @@ def test_extract_research_targets_chapters_tolerates_null_entries():
 def test_extract_research_targets_empty_metadata():
     out = extract_research_targets({})
     assert out == {"links": [], "hashtags": [], "mentions": [], "chapters": []}
+
+
+# --- save_to_library subdir (topic collections) ---
+
+@pytest.fixture
+def library_root(tmp_path, monkeypatch):
+    """Point save_to_library at a throwaway library dir."""
+    root = tmp_path / "library"
+    root.mkdir()
+    monkeypatch.setattr(librarian, "LIBRARY_DIR", root)
+    return root
+
+
+VIDEO_STUB = {
+    "title": "Test Video",
+    "channel": "Test Channel",
+    "date": "20260623",
+    "url": "https://youtu.be/abc123",
+    "video_id": "abc123",
+    "view_count": 1,
+    "like_count": 1,
+    "duration_string": "1:00",
+}
+
+
+def test_save_to_library_without_subdir_stays_flat(library_root):
+    path = librarian.save_to_library(dict(VIDEO_STUB), "body")
+    assert path.parent == library_root
+    assert path.exists()
+
+
+def test_save_to_library_with_subdir_nests(library_root):
+    path = librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="agentic-work")
+    assert path.parent == library_root / "agentic-work"
+    assert path.exists()
+    assert "body" in path.read_text()
+
+
+def test_save_to_library_creates_missing_subdir(library_root):
+    assert not (library_root / "brand-new").exists()
+    librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="brand-new")
+    assert (library_root / "brand-new").is_dir()
+
+
+@pytest.mark.parametrize("hostile", ["../../etc", "..", "/", "../sibling", "a/../../b"])
+def test_save_to_library_subdir_cannot_escape_library(library_root, hostile):
+    path = librarian.save_to_library(dict(VIDEO_STUB), "body", subdir=hostile)
+    assert path.resolve().is_relative_to(library_root.resolve())
+    assert ".." not in path.parts
+
+
+def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
+    # "..." sanitizes to empty — must land in the root, not create a weird dir.
+    path = librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="...")
+    assert path.parent == library_root
+    assert sorted(p.name for p in library_root.iterdir()) == [path.name]

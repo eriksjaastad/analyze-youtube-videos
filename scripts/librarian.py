@@ -423,8 +423,13 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     target_dir = LIBRARY_DIR
     if subdir:
         # Slug the subdir so it can never introduce separators or traversal segments.
-        target_dir = LIBRARY_DIR / safe_slug(subdir)
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # safe_slug strips '.' and '/', so a hostile value can't survive as a path part.
+        slugged = safe_slug(subdir)
+        if not slugged:
+            logger.warning(f"[!] Subdir {subdir!r} sanitized to empty; saving to library root instead.")
+        else:
+            target_dir = LIBRARY_DIR / slugged
+            target_dir.mkdir(parents=True, exist_ok=True)
     filepath = target_dir / filename
 
     # Traversal Guard
@@ -805,8 +810,10 @@ def process_single_video(url: str, args) -> bool:
         "category_id": category_info["id"],
         "filepath": str(filepath)
     }
-    if getattr(args, "subdir", None):
-        entry_data["collection"] = safe_slug(args.subdir)
+    # Derive the collection from where the file actually landed, not from the raw flag —
+    # a subdir that sanitizes to empty falls back to the root and gets no collection tag.
+    if filepath.parent != LIBRARY_DIR:
+        entry_data["collection"] = filepath.parent.name
 
     update_queue(url, data['title'], data['channel'], filepath)
     update_index(entry_data)
