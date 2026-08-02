@@ -22,9 +22,25 @@ uv run scripts/librarian.py "https://youtube.com/watch?v=..."
 # Save a pre-written analysis to the library
 uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
 
+# Save into a topic collection (library/<subdir>/)
+uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
+
 # Batch fetch from a profile (TikTok or YouTube)
 uv run scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limit 10
 ```
+
+### Collections
+
+Most reports live flat in `library/`. When a *kind* of video starts recurring and wants
+its own analysis treatment, it gets a collection: a subdirectory with a `README.md`
+defining what belongs there and which extra sections its reports must carry.
+
+`--subdir <name>` files the report under `library/<name>/` and tags the index entry with
+`collection: <name>`. The name is slugified, so it can't escape `library/`.
+
+| Collection | What it holds |
+|------------|---------------|
+| `agentic-work/` | Videos claiming a market shift or unmet need in agentic AI — read for whether there's paid work in it. Mandatory fact-check + a ranked "consulting genres" section. |
 
 ### Supported Platforms
 - YouTube (youtube.com, youtu.be)

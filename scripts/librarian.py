@@ -400,28 +400,37 @@ def build_tutorial_prompt(data: Dict[str, Any]) -> str:
 BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 
-def save_to_library(data: Dict[str, Any], analysis: str) -> Path:
+def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] = None) -> Path:
     """
     Saves the final report to the library/ directory.
     Uses video_id and safe_slug to prevent filename collisions and ensure safety.
+
+    `subdir` files the report under library/<subdir>/ instead of the flat root, for
+    topic collections that accumulate over time (see library/*/README.md).
     """
     date_str = data.get('date')
     if date_str and len(date_str) == 8:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
-        
+
     clean_title = safe_slug(data['title'])
     clean_channel = safe_slug(data['channel'])
-    
+
     vid_id = safe_slug(data.get('video_id', 'unknown'))[:8]
     filename = f"{formatted_date}_{clean_channel}_{clean_title[:40]}_{vid_id}.md"
-    filepath = LIBRARY_DIR / filename
-    
+
+    target_dir = LIBRARY_DIR
+    if subdir:
+        # Slug the subdir so it can never introduce separators or traversal segments.
+        target_dir = LIBRARY_DIR / safe_slug(subdir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+    filepath = target_dir / filename
+
     # Traversal Guard
     if not filepath.resolve().is_relative_to(LIBRARY_DIR.resolve()):
         raise RuntimeError(f"Potential Path Traversal detected: {filepath}")
-        
+
     tags = ["p/analyze-youtube-videos", "type/knowledge-extraction"]
     if data.get('tags'):
         tags.extend([f"topic/{safe_slug(t)}" for t in data['tags'][:5]])
@@ -782,7 +791,7 @@ def process_single_video(url: str, args) -> bool:
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
 
-    filepath = save_to_library(data, analysis)
+    filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
 
     # Determine category
     category_info = get_category(data['title'], data.get('tags', []))
@@ -796,6 +805,8 @@ def process_single_video(url: str, args) -> bool:
         "category_id": category_info["id"],
         "filepath": str(filepath)
     }
+    if getattr(args, "subdir", None):
+        entry_data["collection"] = safe_slug(args.subdir)
 
     update_queue(url, data['title'], data['channel'], filepath)
     update_index(entry_data)
@@ -814,6 +825,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show output")
     parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
     parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
+    parser.add_argument("--subdir", help="File the report under library/<subdir>/ instead of the library root (topic collection)")
 
     args = parser.parse_args()
 
