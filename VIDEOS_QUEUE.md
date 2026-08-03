@@ -27,6 +27,9 @@ https://youtu.be/1jlKUxqRQAw?si=KqBqj6LBISWJR1Bj claude teams
 https://youtu.be/ZcIqiLLT7Fg?si=Rwv5Cl39vUQZFj3E install open clawd
 https://youtu.be/2KWhHY0KTMk?si=FiZ1Ymgb7sdT7gtN open claw wit local models
 https://youtu.be/f8cfH5XX-XU?si=mO0s_EmZMICU3J_B - New agentic AI open source 
+https://youtu.be/KYe2IToDzl4 - **Prof Steve Keen, "You Won't Believe Who's Actually Controlling America"** (2026-08-02, 16 min). Campaign-finance reform proposal: ban private political donations outright, replace with GDP-linked public funding of parties financed by "democracy bonds," enacted via referendum.
+    - **ERIK TODO: take screenshots of Keen's on-screen tables** — he wants to build infographics around the campaign-finance data. Transcripts won't capture the tables; they have to be grabbed from the video.
+    - Fact-check targets when analyzed: "80% of US politicians funded by pro-Israel lobby groups", "60% of Americans unfavorable toward Israel", UK polling 2:1 claim. Keen is a credible heterodox economist (debt/Minsky) but this is outside his lane. Channel is a Skool funnel ($ course link in description).
 
 ### Backlog
 
