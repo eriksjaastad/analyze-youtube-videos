@@ -41,6 +41,7 @@ defining what belongs there and which extra sections its reports must carry.
 | Collection | What it holds |
 |------------|---------------|
 | `agentic-work/` | Videos claiming a market shift or unmet need in agentic AI — read for whether there's paid work in it. Mandatory fact-check + a ranked "consulting genres" section. |
+| `investment/` | Videos making claims about markets, valuations, corporate finance, or financial regulation — read for source credibility, not trade ideas. Verdict box (thesis vs. evidence scored separately), a graded claim table, and a running analyst pattern per channel. |
 
 ### Supported Platforms
 - YouTube (youtube.com, youtu.be)
