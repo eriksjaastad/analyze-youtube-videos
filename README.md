@@ -35,10 +35,18 @@ Most reports live flat in `library/`. When a *kind* of video starts recurring an
 its own analysis treatment, it gets a collection: a subdirectory with a `README.md`
 defining what belongs there and which extra sections its reports must carry.
 
-A collection can be scoped to a **topic** or to a single **source**. A channel we intend to
-work through over months earns one for the same reason, except the recurring job is different:
-credibility is established once, and each report then contributes to a cumulative framework
-rather than re-litigating whether the source is worth reading.
+A collection can be scoped to a **topic** or to a single **source**. A channel earns its own
+directory for any of three reasons, and they're independent:
+
+- **Volume** — enough entries to clutter the library root (`daisy-studios/`).
+- **Genre** — the channel needs a different analysis treatment than the flat default;
+  `daisy-studios/` is tutorial extraction, where there's nothing to fact-check and the
+  deliverable is a reproducible workflow.
+- **Cumulative work** — credibility is settled after the first video, so later reports build
+  one framework across a run instead of re-vetting the source (`lance-breitstein/`).
+
+Either way, the source's contract is written once in its README instead of being re-derived
+per video.
 
 `--subdir <name>` files the report under `library/<name>/` and tags the index entry with
 `collection: <name>`. The name is slugified, so it can't escape `library/`.
@@ -47,6 +55,7 @@ rather than re-litigating whether the source is worth reading.
 |------------|---------------|
 | `agentic-work/` | Videos claiming a market shift or unmet need in agentic AI — read for whether there's paid work in it. Mandatory fact-check + a ranked "consulting genres" section. |
 | `investment/` | Videos making claims about markets, valuations, corporate finance, or financial regulation — read for source credibility, not trade ideas. Verdict box (thesis vs. evidence scored separately), a graded claim table, and a running analyst pattern per channel. |
+| `daisy-studios/` | Single-**source** collection: Daisy Studios, cross-posted to YouTube and TikTok. The library's largest corpus and its original extraction target. **Tutorial extraction, not credibility assessment**: no verdict box, no claim table. Adds a reproducible-workflow section, a tools-and-cost list, a "what's actually new here" delta against prior videos, and cross-post links between the YouTube/TikTok pairs. |
 | `lance-breitstein/` | Single-**source** collection: Lance Breitstein / TheOneLanceB. Credibility is settled, so the job is cumulative framework extraction across a run of videos. Adds a standing third-party-numbers check (his documented failure mode), a "what changed in the pattern" section, and a program-relevant extract for the `trading-copilot` project. |
 
 ### Supported Platforms
