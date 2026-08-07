@@ -35,6 +35,11 @@ Most reports live flat in `library/`. When a *kind* of video starts recurring an
 its own analysis treatment, it gets a collection: a subdirectory with a `README.md`
 defining what belongs there and which extra sections its reports must carry.
 
+A collection can be scoped to a **topic** or to a single **source**. A channel we intend to
+work through over months earns one for the same reason, except the recurring job is different:
+credibility is established once, and each report then contributes to a cumulative framework
+rather than re-litigating whether the source is worth reading.
+
 `--subdir <name>` files the report under `library/<name>/` and tags the index entry with
 `collection: <name>`. The name is slugified, so it can't escape `library/`.
 
@@ -42,6 +47,7 @@ defining what belongs there and which extra sections its reports must carry.
 |------------|---------------|
 | `agentic-work/` | Videos claiming a market shift or unmet need in agentic AI — read for whether there's paid work in it. Mandatory fact-check + a ranked "consulting genres" section. |
 | `investment/` | Videos making claims about markets, valuations, corporate finance, or financial regulation — read for source credibility, not trade ideas. Verdict box (thesis vs. evidence scored separately), a graded claim table, and a running analyst pattern per channel. |
+| `lance-breitstein/` | Single-**source** collection: Lance Breitstein / TheOneLanceB. Credibility is settled, so the job is cumulative framework extraction across a run of videos. Adds a standing third-party-numbers check (his documented failure mode), a "what changed in the pattern" section, and a program-relevant extract for the `trading-copilot` project. |
 
 ### Supported Platforms
 - YouTube (youtube.com, youtu.be)
