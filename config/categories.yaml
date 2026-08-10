@@ -14,6 +14,9 @@ categories:
   - id: development
     name: "💻 Development & Engineering"
     keywords: ["python", "code", "engineering", "software", "git"]
+  - id: politics_power
+    name: "🏛️ Politics & Power"
+    keywords: ["cult", "politics", "political", "authoritarian", "religion", "dominionism", "propaganda"]
 default_category:
   id: miscellaneous
   name: "📦 Miscellaneous"
