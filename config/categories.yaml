@@ -14,6 +14,11 @@ categories:
   - id: development
     name: "💻 Development & Engineering"
     keywords: ["python", "code", "engineering", "software", "git"]
+  - id: politics_power
+    name: "🏛️ Politics & Power"
+    # No bare "cult" — get_category() does substring matching, so it would swallow
+    # difficult / culture / agriculture / cultivate. The rest are specific enough.
+    keywords: ["politics", "political", "authoritarian", "religion", "dominionism", "propaganda"]
 default_category:
   id: miscellaneous
   name: "📦 Miscellaneous"
