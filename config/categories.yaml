@@ -1,4 +1,11 @@
 categories:
+  # Ordered BEFORE ai_automation deliberately. get_category() returns on the FIRST matching
+  # category in list order, and ai_automation's "ai" keyword otherwise swallows any self-help
+  # video with AI in the title — which is exactly how the Seth Godin episode ("...Before AI
+  # Makes The Choice For You") first landed under "🤖 AI & Automation".
+  - id: self_improvement
+    name: "🧭 Self-Help & Getting Unstuck"
+    keywords: ["self-help", "procrastination", "quitting", "mindset", "burnout", "motivation"]
   - id: agentic_workflows
     name: "🚀 Agentic Workflows"
     keywords: ["agentic", "doe", "orchestration", "vibe"]
