@@ -461,7 +461,7 @@ def test_audit_returns_none_when_there_is_no_claim_table():
 
 def test_audit_counts_fully_sourced_table():
     stats = librarian.audit_claim_sources(SOURCED_TABLE)
-    assert stats == {"total": 2, "unsourced": 0, "ratio": 0.0}
+    assert stats == {"total": 2, "unsourced": 0, "documented": 0, "ratio": 0.0}
 
 
 def test_bulk_source_list_does_not_satisfy_rule_zero():
@@ -511,6 +511,54 @@ def test_every_real_library_header_shape_is_detected(header):
     assert stats["total"] == 1
 
 
+def test_unverified_row_with_search_trail_is_not_counted_unsourced():
+    """The protocol REQUIRES an Unverified row to record what was searched, with no link.
+
+    Counting that as unsourced would penalise a report for complying, and a warning that
+    fires on compliant work is a warning people learn to ignore.
+    """
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Unverified | searched EIA, IEA, SEC filings; nothing primary |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["unsourced"] == 0, "a documented search trail is Unverified, not Unchecked"
+    assert stats["documented"] == 1
+    assert stats["ratio"] == 0.0
+
+
+def test_prose_note_column_does_not_launder_an_uncited_table():
+    """The narrow half of the rule above.
+
+    Only an Unverified grade earns a link-free Source cell. Accepting any prose would let
+    a Detail/Note column absolve a wholly uncited table — the 2026-08-14 pattern exactly.
+    """
+    table = ("| Claim in video | Verified? | Detail from sources |\n|---|---|---|\n"
+             "| China's AI is free | Yes | It is open-weight and widely mirrored |\n"
+             "| It beats Claude | No | Benchmarks are cherry-picked |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["unsourced"] == 2, "prose in a source-ish column must not count as a citation"
+    assert stats["documented"] == 0
+
+
+def test_unclosed_fence_does_not_disable_auditing_for_the_rest_of_the_document():
+    """An unbalanced fence must not silently switch Rule 0 off.
+
+    Latching the skip flag on would return None — indistinguishable from 'no claims here',
+    which is the exact silent-miss class this whole feature exists to remove.
+    """
+    text = ("```\nthis fence is never closed\n\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | a real claim | Wrong | |\n")
+    stats = librarian.audit_claim_sources(text)
+    assert stats is not None, "unclosed fence silently disabled the audit"
+    assert stats["unsourced"] == 1
+
+
+def test_null_byte_in_source_text_is_not_rewritten():
+    """An earlier version swapped \\x00 as an escaping placeholder and corrupted real ones."""
+    cells = librarian._split_row("| a\x00b | c |")
+    assert cells[0] == "a\x00b"
+
+
 def test_claim_table_inside_code_fence_is_ignored():
     """FACT_CHECK_PROTOCOL.md shows an example table; docs must not be audited as reports."""
     text = ("Example of the required shape:\n\n```markdown\n"
@@ -540,7 +588,7 @@ def test_audit_detects_claim_table_without_numeric_id_column():
              "| It runs on seawater | Also no |\n")
     stats = librarian.audit_claim_sources(table)
     assert stats is not None, "a claim table without an ID column must still be detected"
-    assert stats == {"total": 2, "unsourced": 2, "ratio": 1.0}
+    assert stats == {"total": 2, "unsourced": 2, "documented": 0, "ratio": 1.0}
 
 
 def test_audit_accepts_bare_url_as_a_source():
@@ -588,7 +636,7 @@ def test_audit_ignores_urls_in_surrounding_prose():
             "| 1 | claim | Wrong | |\n\n"
             "More context at https://example.org/other\n")
     stats = librarian.audit_claim_sources(text)
-    assert stats == {"total": 1, "unsourced": 1, "ratio": 1.0}
+    assert stats == {"total": 1, "unsourced": 1, "documented": 0, "ratio": 1.0}
 
 
 def test_source_audit_warns_and_flags_ceiling(caplog):

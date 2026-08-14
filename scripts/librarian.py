@@ -422,14 +422,24 @@ UNSOURCED_CLAIM_CEILING = 0.20
 _CLAIM_HEADER = "claim"
 
 
+_UNESCAPED_PIPE_RE = re.compile(r'(?<!\\)\|')
+
+
 def _split_row(line: str) -> List[str]:
     """Split a markdown table row into trimmed cells, dropping the outer pipes.
 
-    Escaped pipes (\\|) are placeholder-swapped so they don't shift column alignment and
-    mislabel a sourced row as unsourced.
+    Splits on unescaped pipes only, so a \\| inside claim text can't shift column
+    alignment and mislabel a sourced row as unsourced. Uses a lookbehind rather than a
+    placeholder swap — an earlier version substituted \\x00, which corrupted any literal
+    NUL byte in the source text.
     """
-    stripped = line.strip().replace(r'\|', '\x00')
-    return [c.strip().replace('\x00', '|') for c in stripped.strip('|').split('|')]
+    cells = _UNESCAPED_PIPE_RE.split(line.strip())
+    # The outer pipes produce empty leading/trailing entries; drop only those.
+    if cells and not cells[0].strip():
+        cells = cells[1:]
+    if cells and not cells[-1].strip():
+        cells = cells[:-1]
+    return [c.strip().replace(r'\|', '|') for c in cells]
 
 
 def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
@@ -453,13 +463,19 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
     write-ups), so those are never nagged.
     """
     lines = analysis.splitlines()
-    total = unsourced = 0
+    total = unsourced = documented = 0
     found_table = False
     in_fence = False
 
+    # Only honour fences when they are balanced. An unclosed fence would otherwise latch
+    # the skip flag on and silently disable auditing for the rest of the document —
+    # returning None, indistinguishable from "this report has no claims". Over-auditing a
+    # stray fenced block is the safe direction: this warns, it never blocks.
+    fences_balanced = sum(1 for ln in lines if _FENCE_RE.match(ln)) % 2 == 0
+
     i = 0
     while i < len(lines) - 1:
-        if _FENCE_RE.match(lines[i]):
+        if fences_balanced and _FENCE_RE.match(lines[i]):
             in_fence = not in_fence
             i += 1
             continue
@@ -479,33 +495,61 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
 
         found_table = True
         src_idx = next((n for n, h in enumerate(header) if "source" in h), None)
+        grade_idx = next((n for n, h in enumerate(header)
+                          if any(v in h for v in ("grade", "verdict", "verified", "reality",
+                                                  "holds up", "status", "assessment"))), None)
         i += 2  # skip header and separator
         while i < len(lines) and lines[i].strip().startswith('|'):
             cells = _split_row(lines[i])
             total += 1
             # No Source column means nothing in this table is cited, by definition.
             cell = cells[src_idx] if src_idx is not None and src_idx < len(cells) else ""
-            if not _MD_LINK_RE.search(cell):
+            grade = (cells[grade_idx].lower()
+                     if grade_idx is not None and grade_idx < len(cells) else "")
+            if _MD_LINK_RE.search(cell):
+                pass  # cited
+            elif cell and "unverified" in grade:
+                # A link-free Source cell is legitimate on exactly one grade: Unverified,
+                # where the protocol asks for the search trail instead ("searched X, Y;
+                # nothing primary found"). Counting that as unsourced would fire the
+                # warning at a report for complying, and a warning that punishes
+                # compliance is one people learn to ignore.
+                #
+                # Narrow on purpose. Accepting *any* prose here would let a "Detail" or
+                # "Note" column launder a whole uncited table — which is the 2026-08-14
+                # pattern exactly: prose in every row, links only in a list at the bottom.
+                documented += 1
+            else:
                 unsourced += 1
             i += 1
 
     if not found_table or not total:
         return None
-    return {"total": total, "unsourced": unsourced, "ratio": unsourced / total}
+    return {
+        "total": total,
+        "unsourced": unsourced,
+        "documented": documented,
+        "ratio": unsourced / total,
+    }
 
 
 def emit_claim_source_audit(stats: Dict[str, Any]) -> None:
-    """Warn when claim rows lack bound sources. Reports, never blocks."""
+    """Warn when claim rows have an empty Source cell. Reports, never blocks."""
     total, unsourced, ratio = stats["total"], stats["unsourced"], stats["ratio"]
+    documented = stats.get("documented", 0)
     if not unsourced:
-        logger.info(f"[fact-check] {total}/{total} claim rows carry a source link.")
+        note = f" ({documented} carry a search trail rather than a link)" if documented else ""
+        logger.info(f"[fact-check] {total}/{total} claim rows carry a source{note}.")
         return
     over = ratio > UNSOURCED_CLAIM_CEILING
     logger.warning("=" * 70)
-    logger.warning(f"[fact-check] {unsourced} of {total} claim rows have NO source link "
-                   f"({ratio:.0%}).")
+    logger.warning(f"[fact-check] {unsourced} of {total} claim rows have an EMPTY source "
+                   f"cell ({ratio:.0%}).")
     logger.warning("[fact-check] Rule 0: the source goes IN the row. A bulk '## Sources'")
     logger.warning("[fact-check] list at the bottom does not satisfy this.")
+    if documented:
+        logger.warning(f"[fact-check] ({documented} more carry a search trail rather than a "
+                       "link — those count as Unverified, not Unchecked.)")
     if over:
         logger.warning(f"[fact-check] !! Above the {UNSOURCED_CLAIM_CEILING:.0%} ceiling — this "
                        "is NOT publishable as a fact-check.")
