@@ -400,6 +400,57 @@ def build_tutorial_prompt(data: Dict[str, Any]) -> str:
 BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 
+# A claim-table row starts with "| <digits>" — the numbering convention every collection
+# README specifies. Suffixed ids like "25a" are counted too.
+_CLAIM_ROW_RE = re.compile(r'^\|\s*\d+[a-z]?\s*\|')
+_MD_LINK_RE = re.compile(r'\[[^\]]+\]\([^)]+\)|https?://')
+# Threshold from FACT_CHECK_PROTOCOL.md: above this, the report is not publishable as a
+# fact-check. Kept here as the single numeric definition so doc and code can't drift.
+UNSOURCED_CLAIM_CEILING = 0.20
+
+
+def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
+    """Count claim-table rows that carry no source link.
+
+    Rule 0 of FACT_CHECK_PROTOCOL.md: the source goes in the row, because an unsourced
+    grade and a sourced grade are visually identical without it — which is how two of the
+    2026-08-14 overturns survived review. A bulk '## Sources' list proves nothing about
+    any individual grade, so it deliberately does not count here.
+
+    Returns None when the report has no claim table (tutorial extractions, workflow
+    write-ups), so those are never nagged. Detection is intentionally naive: it reports,
+    it never blocks, and a false positive costs one ignored warning.
+    """
+    rows = [ln for ln in analysis.splitlines() if _CLAIM_ROW_RE.match(ln.strip())]
+    if not rows:
+        return None
+    unsourced = [r for r in rows if not _MD_LINK_RE.search(r)]
+    return {
+        "total": len(rows),
+        "unsourced": len(unsourced),
+        "ratio": len(unsourced) / len(rows),
+    }
+
+
+def emit_claim_source_audit(stats: Dict[str, Any]) -> None:
+    """Warn when claim rows lack bound sources. Reports, never blocks."""
+    total, unsourced, ratio = stats["total"], stats["unsourced"], stats["ratio"]
+    if not unsourced:
+        logger.info(f"[fact-check] {total}/{total} claim rows carry a source link.")
+        return
+    over = ratio > UNSOURCED_CLAIM_CEILING
+    logger.warning("=" * 70)
+    logger.warning(f"[fact-check] {unsourced} of {total} claim rows have NO source link "
+                   f"({ratio:.0%}).")
+    logger.warning("[fact-check] Rule 0: the source goes IN the row. A bulk '## Sources'")
+    logger.warning("[fact-check] list at the bottom does not satisfy this.")
+    if over:
+        logger.warning(f"[fact-check] !! Above the {UNSOURCED_CLAIM_CEILING:.0%} ceiling — this "
+                       "is NOT publishable as a fact-check.")
+        logger.warning("[fact-check] !! Either bind the sources or grade those rows Unchecked.")
+    logger.warning("=" * 70)
+
+
 def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] = None) -> Path:
     """
     Saves the final report to the library/ directory.
@@ -691,7 +742,9 @@ def emit_fact_check_protocol_reminder() -> None:
     logger.warning("[fact-check] Before grading any claim, read FACT_CHECK_PROTOCOL.md")
     if not FACT_CHECK_PROTOCOL_PATH.exists():
         logger.warning("[fact-check] !! FACT_CHECK_PROTOCOL.md NOT FOUND at repo root !!")
-    logger.warning("[fact-check]  1. No grade from memory. Unsearched == '/ Unchecked'.")
+    logger.warning("[fact-check]  0. SOURCE LINK GOES IN THE CLAIM ROW. A bulk source list at")
+    logger.warning("[fact-check]     the bottom does NOT count. Empty source cell == Unchecked.")
+    logger.warning("[fact-check]  1. No grade from memory. Unsearched == Unchecked.")
     logger.warning("[fact-check]  2. Fetch the primary source. A search snippet is not evidence.")
     logger.warning("[fact-check]  3. Search the speaker's framing and units FIRST, not yours.")
     logger.warning("[fact-check] Re-check every 'Wrong' grade in the speaker's favour before "
@@ -823,6 +876,13 @@ def process_single_video(url: str, args) -> bool:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
+
+    # Rule 0 audit runs on the way in, so an unsourced claim table is caught at the moment
+    # it lands rather than on a re-read months later. Reports, never blocks — a false
+    # positive costs one ignored warning, a missed one costs an unsourced grade in the library.
+    source_stats = audit_claim_sources(analysis)
+    if source_stats:
+        emit_claim_source_audit(source_stats)
 
     filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
 

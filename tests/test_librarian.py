@@ -426,3 +426,84 @@ def test_reminder_is_wired_into_fetch_path(mock_reminder, mock_get, _flag, _targ
     args = MagicMock(analysis_file=None, no_whisper=True, subdir=None, dry_run=False)
     librarian.process_single_video("https://youtu.be/abc", args)
     assert mock_reminder.called, "fact-check reminder is no longer called on the fetch path"
+
+
+# --- Rule 0: sources bound per claim row --------------------------------------------
+# The 2026-08-14 report had 40+ source links in a bulk list and 0 of 49 claim rows bound
+# to any of them. An unsourced grade and a sourced grade look identical without this.
+
+SOURCED_TABLE = """## Claim table
+
+| # | Claim | Grade | Source | Note |
+|---|---|---|---|---|
+| 1 | 80% of energy imported | Wrong | [SASAC](http://en.sasac.gov.cn/x) | Actually ~15% |
+| 2 | Gulf share is 80% | Wrong | [CGEP](https://energypolicy.columbia.edu/y) | ~42% |
+"""
+
+UNSOURCED_TABLE = """## Claim table
+
+| # | Claim | Grade | Note |
+|---|---|---|---|
+| 1 | 80% of energy imported | Wrong | Actually ~15% |
+| 2 | Gulf share is 80% | Wrong | ~42% |
+| 3 | Japan aging claim | Wrong | No |
+
+## Sources
+- [SASAC](http://en.sasac.gov.cn/x)
+- [CGEP](https://energypolicy.columbia.edu/y)
+"""
+
+
+def test_audit_returns_none_when_there_is_no_claim_table():
+    """Tutorial extractions have no claims to source — they must never be nagged."""
+    assert librarian.audit_claim_sources("# Workflow\n\n1. Open the app\n2. Click render") is None
+
+
+def test_audit_counts_fully_sourced_table():
+    stats = librarian.audit_claim_sources(SOURCED_TABLE)
+    assert stats == {"total": 2, "unsourced": 0, "ratio": 0.0}
+
+
+def test_bulk_source_list_does_not_satisfy_rule_zero():
+    """The exact 2026-08-14 failure: links present in the report, none bound to a claim."""
+    stats = librarian.audit_claim_sources(UNSOURCED_TABLE)
+    assert stats["total"] == 3
+    assert stats["unsourced"] == 3, "a bottom-of-report Sources list must not count as binding"
+    assert stats["ratio"] > librarian.UNSOURCED_CLAIM_CEILING
+
+
+def test_audit_counts_suffixed_claim_ids():
+    """Rows numbered 25a/25b are real — the Stratfor report used them."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 25a | x | Wrong | [s](http://a.example) |\n"
+             "| 25b | y | Wrong | |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["total"] == 2 and stats["unsourced"] == 1
+
+
+def test_audit_ignores_bare_urls_outside_claim_rows():
+    """A link in prose above the table must not launder an unsourced row."""
+    text = "See https://example.com for background.\n\n| 1 | claim | Wrong | note |\n"
+    stats = librarian.audit_claim_sources(text)
+    assert stats["unsourced"] == 1
+
+
+def test_source_audit_warns_and_flags_ceiling(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 3, "unsourced": 3, "ratio": 1.0})
+    assert "NOT publishable as a fact-check" in caplog.text
+    assert "Rule 0" in caplog.text
+
+
+def test_source_audit_stays_quiet_when_fully_sourced(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 4, "unsourced": 0, "ratio": 0.0})
+    assert caplog.text == ""
+
+
+def test_source_audit_below_ceiling_warns_without_publishability_verdict(caplog):
+    """One unsourced row out of twenty is worth flagging, not worth condemning."""
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 20, "unsourced": 1, "ratio": 0.05})
+    assert "1 of 20" in caplog.text
+    assert "NOT publishable" not in caplog.text
