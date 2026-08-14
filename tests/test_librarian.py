@@ -472,6 +472,66 @@ def test_bulk_source_list_does_not_satisfy_rule_zero():
     assert stats["ratio"] > librarian.UNSOURCED_CLAIM_CEILING
 
 
+# Every claim-bearing table header found in the 128-report library on 2026-08-14.
+# library/ is gitignored, so a real full-corpus dry run can never be a committed test —
+# this catalog is the durable stand-in. Two detector versions shipped and were sent back
+# because they were validated by spot check against a subset of these shapes.
+# Regenerate with: grep table headers containing "claim" across library/**/*.md
+REAL_CLAIM_HEADERS = [
+    "# | Claim | Grade | Note",
+    "Claim | Grade | Detail",
+    "# | Claim | Verdict",
+    "Claim in video | Verified? | Detail from sources",
+    "Claim | Reality",
+    "Claim | Researchers | Verdict | What the critic / split caught",
+    "Claim | Researchers | Verdict | vs. Pass 1 | Why",
+    "# | Claim | Where",
+    "# | Claim | Verdict | Evidence",
+    "Claim | Grade | Source",
+    "# | Claim | Grade | Source / Note",
+    "# | Beat | Claim",
+    "# | Claim | Verdict | Detail",
+    "Group | Hassan's claim | Holds up?",
+    "Claim | Grade",
+    "# | Who | Claim | Grade | Note",
+]
+
+
+@pytest.mark.parametrize("header", REAL_CLAIM_HEADERS)
+def test_every_real_library_header_shape_is_detected(header):
+    """An allowlist of verdict words missed 'Verified?' and 'Holds up?' in production.
+
+    Detection matches on 'claim' alone precisely so this parametrize can't rot.
+    """
+    ncols = len(header.split("|"))
+    table = (f"| {header} |\n|" + "---|" * ncols + "\n"
+             + "| " + " | ".join(["x"] * ncols) + " |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats is not None, f"claim table not detected: {header}"
+    assert stats["total"] == 1
+
+
+def test_claim_table_inside_code_fence_is_ignored():
+    """FACT_CHECK_PROTOCOL.md shows an example table; docs must not be audited as reports."""
+    text = ("Example of the required shape:\n\n```markdown\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | example | Wrong | |\n```\n")
+    assert librarian.audit_claim_sources(text) is None
+
+
+def test_escaped_pipe_does_not_shift_the_source_column():
+    """A \\| inside claim text must not misalign columns and fake an unsourced row."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | he said a \\| b | Wrong | [src](http://a.example) |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 0
+
+
+def test_ragged_row_shorter_than_header_counts_as_unsourced():
+    """A row missing its Source cell is unsourced, not silently skipped."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n| 1 | x | Wrong |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
 def test_audit_detects_claim_table_without_numeric_id_column():
     """The regression that FAILed review: 3 real reports number differently, 2 of them
     100% unsourced. Keying off a leading digit skipped exactly the worst cases."""

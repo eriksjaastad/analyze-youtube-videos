@@ -402,19 +402,34 @@ BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 _MD_LINK_RE = re.compile(r'\[[^\]]+\]\([^)]+\)|https?://')
 _TABLE_SEP_RE = re.compile(r'^\|[\s:|-]+\|$')
+_FENCE_RE = re.compile(r'^\s*(```|~~~)')
 # Threshold from FACT_CHECK_PROTOCOL.md. Both live in one place only because
 # test_ceiling_matches_protocol_doc() asserts they agree — comments don't prevent drift.
 UNSOURCED_CLAIM_CEILING = 0.20
-# A table is a claim table if its header names the claim and some verdict for it.
-# Collections vary the verdict word ("Grade" in most, "Reality" in the roundup format),
-# so match on the concept rather than one spelling.
+# A table is a claim table if any header cell contains "claim". Nothing more.
+#
+# Two earlier versions tried to be cleverer and both failed review for the same reason.
+# Keying off a numbered first column missed tables that don't number. Adding an allowlist
+# of verdict words (grade/verdict/reality/...) missed "Verified?" and "Holds up?". A survey
+# of every claim-bearing table in the library found 16 distinct header shapes and the
+# verdict column spelled at least seven ways — an allowlist will always be one spelling
+# behind, and each miss is invisible rather than noisy.
+#
+# So: match the one word that is actually invariant. Two of the 16 shapes are not grading
+# tables ("# | beat | claim", "# | claim | where") and will be flagged anyway. That is the
+# right trade — this reports and never blocks, so a false positive costs one ignored
+# warning while a false negative costs an unsourced grade shipped into the library.
 _CLAIM_HEADER = "claim"
-_VERDICT_HEADERS = ("grade", "verdict", "reality", "status", "assessment")
 
 
 def _split_row(line: str) -> List[str]:
-    """Split a markdown table row into trimmed cells, dropping the outer pipes."""
-    return [c.strip() for c in line.strip().strip('|').split('|')]
+    """Split a markdown table row into trimmed cells, dropping the outer pipes.
+
+    Escaped pipes (\\|) are placeholder-swapped so they don't shift column alignment and
+    mislabel a sourced row as unsourced.
+    """
+    stripped = line.strip().replace(r'\|', '\x00')
+    return [c.strip().replace('\x00', '|') for c in stripped.strip('|').split('|')]
 
 
 def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
@@ -425,11 +440,11 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
     2026-08-14 overturns survived review. A bulk '## Sources' list proves nothing about
     any individual grade, so it deliberately does not count here.
 
-    Detection reads the table HEADER rather than guessing from row shape: an earlier
-    version keyed off a leading numeric id and silently skipped three real claim tables in
-    the library that number differently — two of them 100% unsourced, i.e. exactly the
-    case this exists to catch. A table with no Source column at all counts every row as
-    unsourced, which is the correct reading of the 2026-08-14 report.
+    Detection reads the table HEADER, matching only on the word "claim" — see the note on
+    _CLAIM_HEADER for why every cleverer version failed. A table with no Source column at
+    all counts every row as unsourced, which is the correct reading of the 2026-08-14
+    report. Tables inside fenced code blocks are skipped so documentation examples of the
+    format don't get audited as real reports.
 
     Only the Source cell is inspected, not the whole row, so a URL quoted inside the
     claim text can't launder an uncited grade.
@@ -440,17 +455,25 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
     lines = analysis.splitlines()
     total = unsourced = 0
     found_table = False
+    in_fence = False
 
     i = 0
     while i < len(lines) - 1:
+        if _FENCE_RE.match(lines[i]):
+            in_fence = not in_fence
+            i += 1
+            continue
+        if in_fence:
+            i += 1
+            continue
+
         line, nxt = lines[i].strip(), lines[i + 1].strip()
         if not (line.startswith('|') and _TABLE_SEP_RE.match(nxt)):
             i += 1
             continue
 
         header = [h.lower() for h in _split_row(line)]
-        if not (any(_CLAIM_HEADER in h for h in header)
-                and any(v in h for h in header for v in _VERDICT_HEADERS)):
+        if not any(_CLAIM_HEADER in h for h in header):
             i += 1
             continue
 
