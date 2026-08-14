@@ -369,3 +369,32 @@ def test_geopolitics_avoids_known_colliding_keywords(unsafe):
     cfg = yaml.safe_load(Path("config/categories.yaml").read_text(encoding="utf-8"))
     geo = next(c for c in cfg["categories"] if c["id"] == "geopolitics")
     assert unsafe not in geo["keywords"]
+
+
+# --- fact-check protocol reminder ---------------------------------------------------
+# Reports land in library/, which is gitignored, so no PR or CI check ever sees them.
+# This warning is the pipeline's only enforcement point — hence tests that it actually fires.
+
+def test_fact_check_reminder_emits_core_rules(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    out = caplog.text
+    assert "FACT_CHECK_PROTOCOL.md" in out
+    # The three rules that caused real overturns must be in the reminder itself, not
+    # only in the file — an agent that never opens the file still has to see them.
+    assert "No grade from memory" in out
+    assert "primary source" in out
+    assert "speaker's framing" in out
+
+
+def test_fact_check_reminder_flags_missing_protocol_file(caplog, tmp_path, monkeypatch):
+    """If the protocol file goes missing, say so loudly rather than pointing at nothing."""
+    monkeypatch.chdir(tmp_path)
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    assert "NOT FOUND" in caplog.text
+
+
+def test_protocol_file_exists_at_repo_root():
+    """The reminder points at this path; a rename must break a test, not just the docs."""
+    assert Path("FACT_CHECK_PROTOCOL.md").is_file()

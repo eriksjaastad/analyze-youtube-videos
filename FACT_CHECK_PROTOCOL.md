@@ -76,11 +76,15 @@ in the note column, not in place of the search.
 5. **When two sources conflict, cite the one closest in time to the claim, and say the other
    exists.** (The interceptor call was right, but sourced to a later, disputed story instead of
    the analysis published two days before the video.)
-6. **Grade "wrong in the speaker's favour" as carefully as "wrong against them."** F2 was only
-   caught because the second pass was asked explicitly where the *original was too harsh*. Ask that
-   question of yourself in the first pass.
+6. **Re-check every ❌, in the speaker's favour, before publishing.** Not "be self-critical" —
+   that's the judgment that already failed. The mechanical version: take each claim you graded
+   `❌ Wrong` and run **one more search using the speaker's own wording**, asking "what would make
+   this right?" F2 was a `❌` that a single search in his framing would have flipped. This is
+   cheap — wrong grades are rare — and it targets exactly the error you cannot feel yourself
+   making. Record the outcome; "re-checked, still wrong" is a fine result.
 7. **Name what you could not check.** An open gap stated plainly is worth more than a confident
-   grade covering it.
+   grade covering it. Every report ends with an explicit **open gaps** list, and an empty list
+   must be a deliberate statement, not an omission.
 
 ---
 
@@ -97,6 +101,30 @@ in the note column, not in place of the search.
 `❓ Unverified` and `⚪ Unchecked` are different and the difference matters. Unverified means the
 evidence isn't out there; Unchecked means you didn't look. Never quietly promote either to a grade.
 
+**The Unchecked floor.** `⚪ Unchecked` is an honest label, not a way to pass. It is a *budget*:
+
+- If **any** claim in the report is Unchecked, the verdict box must carry the count.
+- If **more than 20%** of graded claims are Unchecked, the report is **not publishable as a
+  fact-check**. Say so in the first ten lines, or go check them.
+- A claim the report leans on — anything cited in the verdict, the pro/con, or the analyst
+  pattern — may **never** be Unchecked. If it's load-bearing, check it or don't lean on it.
+
+### Relationship to the Research Addendum
+
+`README.md` documents a separate **Research Addendum** layer with its own per-claim verdicts
+(`SUPPORTED` / `REFUTED` / `UNVERIFIED` / `DISPUTED`) produced by research sub-agents. That layer
+and this one are **not** the same and must not be merged:
+
+| | Claim table (this protocol) | Research Addendum (`README.md`) |
+|---|---|---|
+| Who grades | You, in the first pass | Research sub-agents |
+| Unit | Every checkable assertion in the video | External claims needing primary-source work |
+| Vocabulary | ✅ ⚠️ ❌ ❓ ⚪ | SUPPORTED / REFUTED / UNVERIFIED / DISPUTED |
+
+An Addendum verdict is **evidence feeding a claim-table grade**, never a substitute for one. A
+`DISPUTED` addendum verdict does not by itself make the claim-table grade `❓` — you still decide
+and still cite. If the two layers disagree, say so in the report rather than silently picking one.
+
 ---
 
 ## The second pass
@@ -108,7 +136,16 @@ Still run it on any fact-check that will be relied on — but as a **backstop**,
   what catches F2, and nothing else does.
 - Record corrections **in the report** (a "what the second pass changed" section) rather than
   silently editing them. The corrections are a finding about method.
-- **Do not treat agent count as rigor.** In the first run, one agent exhausted its search budget,
-  one spawned sub-agents and stopped without collecting them, and one couldn't resolve its
-  assigned figure at all. More agents ≠ more reliable. Discipline in the first pass is what makes
-  the report trustworthy; the second pass only tells you how well you did.
+- **Do not treat agent count as rigor.** In the 2026-08-14 run all eight agents did eventually
+  report, but getting there was not clean: one stopped after spawning its own sub-agents without
+  collecting them and had to be re-prompted, two reported exhausting their search budget
+  mid-task, and two flagged assigned figures they could not resolve (the 1990s Russian nickel
+  trough; ASML's supplier country count). Those are the agents' own words in their returned
+  reports — **which are session-scoped and not preserved in this repo, so treat this paragraph as
+  a first-hand observation, not a citable finding.** The point stands regardless: more agents ≠
+  more reliable. Discipline in the first pass is what makes the report trustworthy; the second
+  pass only tells you how well you did.
+
+> Flagged in review: the previous version of this paragraph stated the agent failures flatly, with
+> no source and no record in the repo — committing F3 inside the document written against F3. It
+> is corrected above rather than deleted, because the correction is the more useful artifact.

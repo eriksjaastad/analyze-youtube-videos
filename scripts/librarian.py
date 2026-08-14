@@ -673,6 +673,27 @@ def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
     logger.warning("=" * 70)
 
 
+# Reports land in library/, which is gitignored — no PR, hook, or CI check ever sees them.
+# This warning is the only enforcement point the pipeline has, so it fires on every fetch.
+def emit_fact_check_protocol_reminder() -> None:
+    """Surface the fact-check protocol at fetch time, before any grading happens.
+
+    Origin: 2026-08-14, an ~11% materially-wrong first-pass grade rate. The three rules
+    below are the ones that caused overturns; the file has the other four and the reasoning.
+    """
+    path = Path("FACT_CHECK_PROTOCOL.md")
+    logger.warning("-" * 70)
+    logger.warning("[fact-check] Before grading any claim, read FACT_CHECK_PROTOCOL.md")
+    if not path.exists():
+        logger.warning("[fact-check] !! FACT_CHECK_PROTOCOL.md NOT FOUND at repo root !!")
+    logger.warning("[fact-check]  1. No grade from memory. Unsearched == '/ Unchecked'.")
+    logger.warning("[fact-check]  2. Fetch the primary source. A search snippet is not evidence.")
+    logger.warning("[fact-check]  3. Search the speaker's framing and units FIRST, not yours.")
+    logger.warning("[fact-check] Re-check every 'Wrong' grade in the speaker's favour before "
+                   "publishing.")
+    logger.warning("-" * 70)
+
+
 # High-signal patterns for harvesting deterministic research targets.
 _URL_RE = re.compile(r'https?://[^\s<>"\')]+')
 _HASHTAG_RE = re.compile(r'(?<!\w)#(\w+)')
@@ -769,6 +790,8 @@ def process_single_video(url: str, args) -> bool:
     if not args.analysis_file:
         # Seed the research pass with a deterministic checklist of what to verify.
         data["research_targets"] = extract_research_targets(data)
+        # Fires here, on the fetch that precedes grading — not on the save, which is too late.
+        emit_fact_check_protocol_reminder()
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return True
 
