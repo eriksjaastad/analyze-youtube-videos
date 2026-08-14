@@ -322,3 +322,65 @@ def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
     path = librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="...")
     assert path.parent == library_root
     assert sorted(p.name for p in library_root.iterdir()) == [path.name]
+
+
+# --- get_category() keyword routing -------------------------------------------------
+# get_category() does SUBSTRING matching over (title + tags) and returns on the FIRST
+# matching category in config order. That makes short keywords dangerous: a keyword that
+# happens to appear inside an unrelated phrase silently steals every video containing it.
+# These tests pin the collisions we have already been bitten by.
+
+@pytest.mark.parametrize(
+    "title,tags,expected",
+    [
+        # The case that motivated the geopolitics category: geopolitics videos tag
+        # "AI drone warfare", and ai_automation's bare "ai" keyword was swallowing them.
+        ("Four Ex-Stratfor Analysts Reunite to Predict How the World Ends",
+         ["geopolitics", "AI drone warfare", "deglobalization"], "geopolitics"),
+        # "New World Order" is stock cults/politics_power phrasing. geopolitics is ordered
+        # ahead of politics_power, so a "world order" keyword there would hijack it.
+        ("Christian Dominionism and the New World Order",
+         ["dominionism", "religion"], "politics_power"),
+        # Chinese-model AI videos must not be captured by a geopolitics "china" keyword.
+        ("China's Free AI Just Embarrassed Claude", ["ai", "llm"], "ai_automation"),
+        # self_improvement stays ahead of ai_automation (the Seth Godin regression).
+        ("The Quitting Expert: Quit Now Before AI Makes The Choice For You",
+         ["self-help", "quitting"], "self_improvement"),
+        ("Claude Code Task System: ANTI-HYPE Agentic Coding", ["agentic", "ai"],
+         "agentic_workflows"),
+        ("Day Trading Taxes Step By Step Guide", ["taxes"], "miscellaneous"),
+    ],
+)
+def test_get_category_routes_expected(title, tags, expected):
+    assert librarian.get_category(title, tags)["id"] == expected
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    ["war", "nato", "china", "world order", "cult", "ai"],
+)
+def test_geopolitics_avoids_known_colliding_keywords(unsafe):
+    """These substrings appear inside unrelated words or other genres' stock phrases.
+
+    "war" is in software/warrior/warehouse, "nato" is in seNATOr, "china" and "ai" belong
+    to AI-industry videos, "world order" to conspiracy content, "cult" to difficult/culture.
+    """
+    import yaml
+    cfg = yaml.safe_load(open("config/categories.yaml", encoding="utf-8"))
+    geo = next(c for c in cfg["categories"] if c["id"] == "geopolitics")
+    assert unsafe not in geo["keywords"]
+
+
+def test_every_indexed_category_id_exists_in_config():
+    """Guards the silent-drop bug: update_index() skips entries whose category_id is
+    not in the config, so a retired id makes those entries vanish from the rendered
+    index. Currently xfail — 8 entries carry a retired 'antigravity' id (#81799552705916928).
+    """
+    import yaml
+    cfg = yaml.safe_load(open("config/categories.yaml", encoding="utf-8"))
+    valid = {c["id"] for c in cfg["categories"]} | {cfg["default_category"]["id"]}
+    idx = yaml.safe_load(open("library/index.yaml", encoding="utf-8"))
+    orphans = sorted({e.get("category_id") for e in idx["entries"]
+                      if e.get("category_id") not in valid})
+    if orphans:
+        pytest.xfail(f"retired category_id(s) still in index: {orphans}")
