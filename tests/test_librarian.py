@@ -472,6 +472,46 @@ def test_bulk_source_list_does_not_satisfy_rule_zero():
     assert stats["ratio"] > librarian.UNSOURCED_CLAIM_CEILING
 
 
+def test_audit_detects_claim_table_without_numeric_id_column():
+    """The regression that FAILed review: 3 real reports number differently, 2 of them
+    100% unsourced. Keying off a leading digit skipped exactly the worst cases."""
+    table = ("| Claim | Reality |\n|---|---|\n"
+             "| China makes unlimited fuel | No such thing |\n"
+             "| It runs on seawater | Also no |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats is not None, "a claim table without an ID column must still be detected"
+    assert stats == {"total": 2, "unsourced": 2, "ratio": 1.0}
+
+
+def test_audit_accepts_bare_url_as_a_source():
+    """A bare URL in the Source cell is a citation; dropping this branch must fail a test."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Wrong | https://eia.gov/report |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 0
+
+
+def test_url_in_claim_text_does_not_launder_an_uncited_row():
+    """Only the Source cell counts — a URL quoted in the claim can't stand in for a citation."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | He cited https://example.com/paper | Wrong | |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_non_claim_tables_are_ignored():
+    """Forecast scoreboards and chapter tables must not be audited as claims."""
+    text = ("| # | Who | Prediction | Due | Status |\n|---|---|---|---|---|\n"
+            "| F1 | Zeihan | oil hits minimums | 2026 | Open |\n\n"
+            "| Timestamp | Section |\n|---|---|\n| 00:00 | Intro |\n")
+    assert librarian.audit_claim_sources(text) is None
+
+
+def test_ceiling_matches_protocol_doc():
+    """The comment claims doc and code can't drift; this is what actually prevents it."""
+    doc = Path("FACT_CHECK_PROTOCOL.md").read_text(encoding="utf-8")
+    pct = f"{librarian.UNSOURCED_CLAIM_CEILING:.0%}"
+    assert pct in doc, f"protocol doc does not mention the {pct} ceiling defined in code"
+
+
 def test_audit_counts_suffixed_claim_ids():
     """Rows numbered 25a/25b are real — the Stratfor report used them."""
     table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
@@ -481,11 +521,14 @@ def test_audit_counts_suffixed_claim_ids():
     assert stats["total"] == 2 and stats["unsourced"] == 1
 
 
-def test_audit_ignores_bare_urls_outside_claim_rows():
-    """A link in prose above the table must not launder an unsourced row."""
-    text = "See https://example.com for background.\n\n| 1 | claim | Wrong | note |\n"
+def test_audit_ignores_urls_in_surrounding_prose():
+    """A link in prose around the table must not launder an unsourced row."""
+    text = ("See https://example.com for background.\n\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | claim | Wrong | |\n\n"
+            "More context at https://example.org/other\n")
     stats = librarian.audit_claim_sources(text)
-    assert stats["unsourced"] == 1
+    assert stats == {"total": 1, "unsourced": 1, "ratio": 1.0}
 
 
 def test_source_audit_warns_and_flags_ceiling(caplog):

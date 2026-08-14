@@ -400,36 +400,75 @@ def build_tutorial_prompt(data: Dict[str, Any]) -> str:
 BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 
-# A claim-table row starts with "| <digits>" — the numbering convention every collection
-# README specifies. Suffixed ids like "25a" are counted too.
-_CLAIM_ROW_RE = re.compile(r'^\|\s*\d+[a-z]?\s*\|')
 _MD_LINK_RE = re.compile(r'\[[^\]]+\]\([^)]+\)|https?://')
-# Threshold from FACT_CHECK_PROTOCOL.md: above this, the report is not publishable as a
-# fact-check. Kept here as the single numeric definition so doc and code can't drift.
+_TABLE_SEP_RE = re.compile(r'^\|[\s:|-]+\|$')
+# Threshold from FACT_CHECK_PROTOCOL.md. Both live in one place only because
+# test_ceiling_matches_protocol_doc() asserts they agree — comments don't prevent drift.
 UNSOURCED_CLAIM_CEILING = 0.20
+# A table is a claim table if its header names the claim and some verdict for it.
+# Collections vary the verdict word ("Grade" in most, "Reality" in the roundup format),
+# so match on the concept rather than one spelling.
+_CLAIM_HEADER = "claim"
+_VERDICT_HEADERS = ("grade", "verdict", "reality", "status", "assessment")
+
+
+def _split_row(line: str) -> List[str]:
+    """Split a markdown table row into trimmed cells, dropping the outer pipes."""
+    return [c.strip() for c in line.strip().strip('|').split('|')]
 
 
 def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
-    """Count claim-table rows that carry no source link.
+    """Count claim-table rows whose Source cell is empty.
 
     Rule 0 of FACT_CHECK_PROTOCOL.md: the source goes in the row, because an unsourced
     grade and a sourced grade are visually identical without it — which is how two of the
     2026-08-14 overturns survived review. A bulk '## Sources' list proves nothing about
     any individual grade, so it deliberately does not count here.
 
-    Returns None when the report has no claim table (tutorial extractions, workflow
-    write-ups), so those are never nagged. Detection is intentionally naive: it reports,
-    it never blocks, and a false positive costs one ignored warning.
+    Detection reads the table HEADER rather than guessing from row shape: an earlier
+    version keyed off a leading numeric id and silently skipped three real claim tables in
+    the library that number differently — two of them 100% unsourced, i.e. exactly the
+    case this exists to catch. A table with no Source column at all counts every row as
+    unsourced, which is the correct reading of the 2026-08-14 report.
+
+    Only the Source cell is inspected, not the whole row, so a URL quoted inside the
+    claim text can't launder an uncited grade.
+
+    Returns None when the report contains no claim table (tutorial extractions, workflow
+    write-ups), so those are never nagged.
     """
-    rows = [ln for ln in analysis.splitlines() if _CLAIM_ROW_RE.match(ln.strip())]
-    if not rows:
+    lines = analysis.splitlines()
+    total = unsourced = 0
+    found_table = False
+
+    i = 0
+    while i < len(lines) - 1:
+        line, nxt = lines[i].strip(), lines[i + 1].strip()
+        if not (line.startswith('|') and _TABLE_SEP_RE.match(nxt)):
+            i += 1
+            continue
+
+        header = [h.lower() for h in _split_row(line)]
+        if not (any(_CLAIM_HEADER in h for h in header)
+                and any(v in h for h in header for v in _VERDICT_HEADERS)):
+            i += 1
+            continue
+
+        found_table = True
+        src_idx = next((n for n, h in enumerate(header) if "source" in h), None)
+        i += 2  # skip header and separator
+        while i < len(lines) and lines[i].strip().startswith('|'):
+            cells = _split_row(lines[i])
+            total += 1
+            # No Source column means nothing in this table is cited, by definition.
+            cell = cells[src_idx] if src_idx is not None and src_idx < len(cells) else ""
+            if not _MD_LINK_RE.search(cell):
+                unsourced += 1
+            i += 1
+
+    if not found_table or not total:
         return None
-    unsourced = [r for r in rows if not _MD_LINK_RE.search(r)]
-    return {
-        "total": len(rows),
-        "unsourced": len(unsourced),
-        "ratio": len(unsourced) / len(rows),
-    }
+    return {"total": total, "unsourced": unsourced, "ratio": unsourced / total}
 
 
 def emit_claim_source_audit(stats: Dict[str, Any]) -> None:

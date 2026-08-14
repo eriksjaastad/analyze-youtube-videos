@@ -92,14 +92,18 @@ report carried 40+ links and **49 of 49 claim rows had none bound to them.**
 - Keep the bottom-of-report `## Sources` section as a reading list. It is a convenience, never
   the citation.
 
-### Relationship to the Research Addendum
+### Where Rule 0 came from
 
-This is the same requirement the **research layer** has carried since 2026-06-27
-(`extract_research_targets()` + the `## Research Addendum` spec in `README.md`), which already
-said claims get verified against primary sources with a `Sources consulted` line. That rule was
-not wrong — it was **unenforced**: 6 of 128 reports in the library carry an Addendum at all.
-Rule 0 is that requirement moved from a section at the end of the report into the claim row
-itself, where its absence is visible instead of silent.
+The **research layer** has required primary-source verification since 2026-06-27
+(`extract_research_targets()` plus the `## Research Addendum` spec in `README.md`), including a
+`Sources consulted` line. That rule was never wrong — it was **unenforced**, and unenforced in a
+specific way worth naming: it asked for sources *somewhere in the report* rather than *bound to a
+claim*. Measured across the library: 6 of 128 reports carry an Addendum at all, and **all 8
+reports with a claim table have 100% unsourced rows.**
+
+Rule 0 does not replace that layer (see [the two layers](#relationship-to-the-research-addendum)
+below — they stay separate). It moves the *citation* from the end of the report into the claim
+row, where its absence is visible instead of silent.
 
 ---
 
