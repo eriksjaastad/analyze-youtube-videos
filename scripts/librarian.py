@@ -443,22 +443,23 @@ def _split_row(line: str) -> List[str]:
 
 
 _WORD_RE = re.compile(r'[a-z]+')
-# Grade words that carry an assertion about the claim, and therefore demand a citation.
-_ASSERTIVE_GRADES = frozenset({
-    "confirmed", "wrong", "false", "imprecise", "overstated", "understated",
-    "refuted", "disputed", "supported", "correct", "true", "right", "partly",
-})
 
 
 def _is_unverified_grade(cell: str) -> bool:
-    """True only when the grade IS Unverified, not merely mentions it.
+    """True only when the grade LEADS with Unverified, not merely mentions it.
 
-    A substring test waives composite grades like "Confirmed, timing unverified" — the
-    primary grade there is Confirmed, which per the Grades table requires a link. Emoji
-    and markdown emphasis are stripped so "**🟡 Unverified**" still matches.
+    Emoji and markdown emphasis are stripped by tokenisation, so "**🟡 Unverified**" and
+    "🟡 Unverified specifics" both match, while "Number confirmed, timing unverified"
+    does not — its primary grade is Confirmed, which the Grades table says needs a link.
+
+    Deliberately positional rather than an allowlist of assertive grade words. A previous
+    version listed confirmed/wrong/imprecise/... and could still be beaten by any spelling
+    absent from it ("Misleading, unverified"). Round two of this review failed on exactly
+    that shape of mistake at the header level; the fix is to stop enumerating vocabulary
+    and key on structure, which cannot fall behind.
     """
-    words = set(_WORD_RE.findall(cell.lower()))
-    return "unverified" in words and not (words & _ASSERTIVE_GRADES)
+    words = _WORD_RE.findall(cell.lower())
+    return bool(words) and words[0] == "unverified"
 
 
 def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:

@@ -534,6 +534,10 @@ def test_unverified_row_with_search_trail_is_not_counted_unsourced():
     ("🟡 Number confirmed, timing unverified", False),
     ("Wrong; the rest is unverified", False),
     ("Confirmed", False),
+    ("Unverified specifics", True),
+    # Beat the old allowlist: "misleading" was never in it, so this used to be waived.
+    ("Misleading, unverified", False),
+    ("Debunked, timing unverified", False),
 ])
 def test_only_a_pure_unverified_grade_waives_the_link(grade, waived):
     """Substring-matching the grade cell waived composite grades — real content in
