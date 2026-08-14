@@ -6,6 +6,19 @@ categories:
   - id: self_improvement
     name: "🧭 Self-Help & Getting Unstuck"
     keywords: ["self-help", "procrastination", "quitting", "mindset", "burnout", "motivation"]
+  # Also ordered BEFORE ai_automation, for the same reason. Geopolitics videos routinely carry
+  # tags like "AI drone warfare", which ai_automation's bare "ai" keyword swallows — that is how
+  # the ex-Stratfor panel first landed under "🤖 AI & Automation".
+  # Keyword choices are constrained by get_category()'s substring matching:
+  # no bare "war" (software / warrior / warehouse), no "nato" (seNATOr), no "china"
+  # (it would swallow AI-industry videos about Chinese models), and NO "world order" —
+  # it matches "New World Order", which is stock phrasing in the cults/politics_power
+  # genre, and this category is ordered ahead of politics_power so it would win.
+  # The category NAME may say "World Order"; only keywords are substring-matched.
+  - id: geopolitics
+    name: "🌍 Geopolitics & World Order"
+    keywords: ["geopolitics", "geopolitical", "deglobalization", "taiwan",
+               "sanctions", "great power", "demographic collapse"]
   - id: agentic_workflows
     name: "🚀 Agentic Workflows"
     keywords: ["agentic", "doe", "orchestration", "vibe"]
