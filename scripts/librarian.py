@@ -673,6 +673,12 @@ def emit_flag_warning(entry: Dict[str, Any], data: Dict[str, Any]) -> None:
     logger.warning("=" * 70)
 
 
+# Anchored to the script's own location, not CWD — same reason as FLAGGED_CHANNELS_PATH above.
+# A CWD-relative lookup here would report the protocol "NOT FOUND" whenever the librarian is
+# invoked from anywhere but the repo root, which is the exact opposite of a reliability gate.
+FACT_CHECK_PROTOCOL_PATH = Path(__file__).resolve().parent.parent / "FACT_CHECK_PROTOCOL.md"
+
+
 # Reports land in library/, which is gitignored — no PR, hook, or CI check ever sees them.
 # This warning is the only enforcement point the pipeline has, so it fires on every fetch.
 def emit_fact_check_protocol_reminder() -> None:
@@ -681,10 +687,9 @@ def emit_fact_check_protocol_reminder() -> None:
     Origin: 2026-08-14, an ~11% materially-wrong first-pass grade rate. The three rules
     below are the ones that caused overturns; the file has the other four and the reasoning.
     """
-    path = Path("FACT_CHECK_PROTOCOL.md")
     logger.warning("-" * 70)
     logger.warning("[fact-check] Before grading any claim, read FACT_CHECK_PROTOCOL.md")
-    if not path.exists():
+    if not FACT_CHECK_PROTOCOL_PATH.exists():
         logger.warning("[fact-check] !! FACT_CHECK_PROTOCOL.md NOT FOUND at repo root !!")
     logger.warning("[fact-check]  1. No grade from memory. Unsearched == '/ Unchecked'.")
     logger.warning("[fact-check]  2. Fetch the primary source. A search snippet is not evidence.")

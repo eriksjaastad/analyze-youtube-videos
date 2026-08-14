@@ -389,12 +389,40 @@ def test_fact_check_reminder_emits_core_rules(caplog):
 
 def test_fact_check_reminder_flags_missing_protocol_file(caplog, tmp_path, monkeypatch):
     """If the protocol file goes missing, say so loudly rather than pointing at nothing."""
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(librarian, "FACT_CHECK_PROTOCOL_PATH", tmp_path / "gone.md")
     with caplog.at_level("WARNING"):
         librarian.emit_fact_check_protocol_reminder()
     assert "NOT FOUND" in caplog.text
 
 
+def test_fact_check_reminder_path_is_cwd_independent(caplog, tmp_path, monkeypatch):
+    """A gate that cries NOT FOUND when run from another directory is worse than no gate.
+
+    FACT_CHECK_PROTOCOL_PATH is anchored to __file__, so changing CWD must not affect it.
+    """
+    monkeypatch.chdir(tmp_path)
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    assert "NOT FOUND" not in caplog.text
+
+
 def test_protocol_file_exists_at_repo_root():
     """The reminder points at this path; a rename must break a test, not just the docs."""
-    assert Path("FACT_CHECK_PROTOCOL.md").is_file()
+    assert librarian.FACT_CHECK_PROTOCOL_PATH.is_file()
+
+
+@patch("scripts.librarian.extract_research_targets", return_value={})
+@patch("scripts.librarian.check_flagged_channel", return_value=None)
+@patch("scripts.librarian.get_video_data")
+@patch("scripts.librarian.emit_fact_check_protocol_reminder")
+def test_reminder_is_wired_into_fetch_path(mock_reminder, mock_get, _flag, _targets, capsys):
+    """Covers the WIRING, not just the function.
+
+    The isolated tests above would still pass if a refactor dropped the call from
+    process_single_video() — this asserts it actually fires on the fetch that precedes
+    grading, and before the JSON the analyst reads.
+    """
+    mock_get.return_value = dict(VIDEO_STUB)
+    args = MagicMock(analysis_file=None, no_whisper=True, subdir=None, dry_run=False)
+    librarian.process_single_video("https://youtu.be/abc", args)
+    assert mock_reminder.called, "fact-check reminder is no longer called on the fetch path"
