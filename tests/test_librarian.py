@@ -525,6 +525,40 @@ def test_unverified_row_with_search_trail_is_not_counted_unsourced():
     assert stats["ratio"] == 0.0
 
 
+@pytest.mark.parametrize("grade,waived", [
+    ("Unverified", True),
+    ("❓ Unverified", True),
+    ("**🟡 Unverified**", True),
+    # Composite grades assert something about the claim, so they still need a link.
+    ("Confirmed, timing unverified", False),
+    ("🟡 Number confirmed, timing unverified", False),
+    ("Wrong; the rest is unverified", False),
+    ("Confirmed", False),
+])
+def test_only_a_pure_unverified_grade_waives_the_link(grade, waived):
+    """Substring-matching the grade cell waived composite grades — real content in
+    library/lance-breitstein/ row 12 hit exactly this."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             f"| 1 | x | {grade} | searched A, B; nothing primary |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["documented"] == (1 if waived else 0)
+    assert stats["unsourced"] == (0 if waived else 1)
+
+
+def test_unverified_grade_with_empty_source_is_still_unchecked():
+    """Unverified earns a waiver for the LINK, never for the cell being empty."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Unverified | |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_unverified_in_claim_text_does_not_waive_the_link():
+    """The word must be in the grade cell, not anywhere in the row."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | he called it unverified | Wrong | some prose |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
 def test_prose_note_column_does_not_launder_an_uncited_table():
     """The narrow half of the rule above.
 

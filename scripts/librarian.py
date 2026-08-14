@@ -442,6 +442,25 @@ def _split_row(line: str) -> List[str]:
     return [c.strip().replace(r'\|', '|') for c in cells]
 
 
+_WORD_RE = re.compile(r'[a-z]+')
+# Grade words that carry an assertion about the claim, and therefore demand a citation.
+_ASSERTIVE_GRADES = frozenset({
+    "confirmed", "wrong", "false", "imprecise", "overstated", "understated",
+    "refuted", "disputed", "supported", "correct", "true", "right", "partly",
+})
+
+
+def _is_unverified_grade(cell: str) -> bool:
+    """True only when the grade IS Unverified, not merely mentions it.
+
+    A substring test waives composite grades like "Confirmed, timing unverified" — the
+    primary grade there is Confirmed, which per the Grades table requires a link. Emoji
+    and markdown emphasis are stripped so "**🟡 Unverified**" still matches.
+    """
+    words = set(_WORD_RE.findall(cell.lower()))
+    return "unverified" in words and not (words & _ASSERTIVE_GRADES)
+
+
 def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
     """Count claim-table rows whose Source cell is empty.
 
@@ -504,11 +523,11 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
             total += 1
             # No Source column means nothing in this table is cited, by definition.
             cell = cells[src_idx] if src_idx is not None and src_idx < len(cells) else ""
-            grade = (cells[grade_idx].lower()
-                     if grade_idx is not None and grade_idx < len(cells) else "")
+            grade = (cells[grade_idx] if grade_idx is not None and grade_idx < len(cells)
+                     else "")
             if _MD_LINK_RE.search(cell):
                 pass  # cited
-            elif cell and "unverified" in grade:
+            elif cell and _is_unverified_grade(grade):
                 # A link-free Source cell is legitimate on exactly one grade: Unverified,
                 # where the protocol asks for the search trail instead ("searched X, Y;
                 # nothing primary found"). Counting that as unsourced would fire the
