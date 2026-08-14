@@ -426,3 +426,273 @@ def test_reminder_is_wired_into_fetch_path(mock_reminder, mock_get, _flag, _targ
     args = MagicMock(analysis_file=None, no_whisper=True, subdir=None, dry_run=False)
     librarian.process_single_video("https://youtu.be/abc", args)
     assert mock_reminder.called, "fact-check reminder is no longer called on the fetch path"
+
+
+# --- Rule 0: sources bound per claim row --------------------------------------------
+# The 2026-08-14 report had 40+ source links in a bulk list and 0 of 49 claim rows bound
+# to any of them. An unsourced grade and a sourced grade look identical without this.
+
+SOURCED_TABLE = """## Claim table
+
+| # | Claim | Grade | Source | Note |
+|---|---|---|---|---|
+| 1 | 80% of energy imported | Wrong | [SASAC](http://en.sasac.gov.cn/x) | Actually ~15% |
+| 2 | Gulf share is 80% | Wrong | [CGEP](https://energypolicy.columbia.edu/y) | ~42% |
+"""
+
+UNSOURCED_TABLE = """## Claim table
+
+| # | Claim | Grade | Note |
+|---|---|---|---|
+| 1 | 80% of energy imported | Wrong | Actually ~15% |
+| 2 | Gulf share is 80% | Wrong | ~42% |
+| 3 | Japan aging claim | Wrong | No |
+
+## Sources
+- [SASAC](http://en.sasac.gov.cn/x)
+- [CGEP](https://energypolicy.columbia.edu/y)
+"""
+
+
+def test_audit_returns_none_when_there_is_no_claim_table():
+    """Tutorial extractions have no claims to source — they must never be nagged."""
+    assert librarian.audit_claim_sources("# Workflow\n\n1. Open the app\n2. Click render") is None
+
+
+def test_audit_counts_fully_sourced_table():
+    stats = librarian.audit_claim_sources(SOURCED_TABLE)
+    assert stats == {"total": 2, "unsourced": 0, "documented": 0, "ratio": 0.0}
+
+
+def test_bulk_source_list_does_not_satisfy_rule_zero():
+    """The exact 2026-08-14 failure: links present in the report, none bound to a claim."""
+    stats = librarian.audit_claim_sources(UNSOURCED_TABLE)
+    assert stats["total"] == 3
+    assert stats["unsourced"] == 3, "a bottom-of-report Sources list must not count as binding"
+    assert stats["ratio"] > librarian.UNSOURCED_CLAIM_CEILING
+
+
+# Every claim-bearing table header found in the 128-report library on 2026-08-14.
+# library/ is gitignored, so a real full-corpus dry run can never be a committed test —
+# this catalog is the durable stand-in. Two detector versions shipped and were sent back
+# because they were validated by spot check against a subset of these shapes.
+# Regenerate with: grep table headers containing "claim" across library/**/*.md
+REAL_CLAIM_HEADERS = [
+    "# | Claim | Grade | Note",
+    "Claim | Grade | Detail",
+    "# | Claim | Verdict",
+    "Claim in video | Verified? | Detail from sources",
+    "Claim | Reality",
+    "Claim | Researchers | Verdict | What the critic / split caught",
+    "Claim | Researchers | Verdict | vs. Pass 1 | Why",
+    "# | Claim | Where",
+    "# | Claim | Verdict | Evidence",
+    "Claim | Grade | Source",
+    "# | Claim | Grade | Source / Note",
+    "# | Beat | Claim",
+    "# | Claim | Verdict | Detail",
+    "Group | Hassan's claim | Holds up?",
+    "Claim | Grade",
+    "# | Who | Claim | Grade | Note",
+]
+
+
+@pytest.mark.parametrize("header", REAL_CLAIM_HEADERS)
+def test_every_real_library_header_shape_is_detected(header):
+    """An allowlist of verdict words missed 'Verified?' and 'Holds up?' in production.
+
+    Detection matches on 'claim' alone precisely so this parametrize can't rot.
+    """
+    ncols = len(header.split("|"))
+    table = (f"| {header} |\n|" + "---|" * ncols + "\n"
+             + "| " + " | ".join(["x"] * ncols) + " |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats is not None, f"claim table not detected: {header}"
+    assert stats["total"] == 1
+
+
+def test_unverified_row_with_search_trail_is_not_counted_unsourced():
+    """The protocol REQUIRES an Unverified row to record what was searched, with no link.
+
+    Counting that as unsourced would penalise a report for complying, and a warning that
+    fires on compliant work is a warning people learn to ignore.
+    """
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Unverified | searched EIA, IEA, SEC filings; nothing primary |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["unsourced"] == 0, "a documented search trail is Unverified, not Unchecked"
+    assert stats["documented"] == 1
+    assert stats["ratio"] == 0.0
+
+
+@pytest.mark.parametrize("grade,waived", [
+    ("Unverified", True),
+    ("❓ Unverified", True),
+    ("**🟡 Unverified**", True),
+    # Composite grades assert something about the claim, so they still need a link.
+    ("Confirmed, timing unverified", False),
+    ("🟡 Number confirmed, timing unverified", False),
+    ("Wrong; the rest is unverified", False),
+    ("Confirmed", False),
+    ("Unverified specifics", True),
+    # Beat the old allowlist: "misleading" was never in it, so this used to be waived.
+    ("Misleading, unverified", False),
+    ("Debunked, timing unverified", False),
+])
+def test_only_a_pure_unverified_grade_waives_the_link(grade, waived):
+    """Substring-matching the grade cell waived composite grades — real content in
+    library/lance-breitstein/ row 12 hit exactly this."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             f"| 1 | x | {grade} | searched A, B; nothing primary |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["documented"] == (1 if waived else 0)
+    assert stats["unsourced"] == (0 if waived else 1)
+
+
+def test_unverified_grade_with_empty_source_is_still_unchecked():
+    """Unverified earns a waiver for the LINK, never for the cell being empty."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Unverified | |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_unverified_in_claim_text_does_not_waive_the_link():
+    """The word must be in the grade cell, not anywhere in the row."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | he called it unverified | Wrong | some prose |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_prose_note_column_does_not_launder_an_uncited_table():
+    """The narrow half of the rule above.
+
+    Only an Unverified grade earns a link-free Source cell. Accepting any prose would let
+    a Detail/Note column absolve a wholly uncited table — the 2026-08-14 pattern exactly.
+    """
+    table = ("| Claim in video | Verified? | Detail from sources |\n|---|---|---|\n"
+             "| China's AI is free | Yes | It is open-weight and widely mirrored |\n"
+             "| It beats Claude | No | Benchmarks are cherry-picked |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["unsourced"] == 2, "prose in a source-ish column must not count as a citation"
+    assert stats["documented"] == 0
+
+
+def test_unclosed_fence_does_not_disable_auditing_for_the_rest_of_the_document():
+    """An unbalanced fence must not silently switch Rule 0 off.
+
+    Latching the skip flag on would return None — indistinguishable from 'no claims here',
+    which is the exact silent-miss class this whole feature exists to remove.
+    """
+    text = ("```\nthis fence is never closed\n\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | a real claim | Wrong | |\n")
+    stats = librarian.audit_claim_sources(text)
+    assert stats is not None, "unclosed fence silently disabled the audit"
+    assert stats["unsourced"] == 1
+
+
+def test_null_byte_in_source_text_is_not_rewritten():
+    """An earlier version swapped \\x00 as an escaping placeholder and corrupted real ones."""
+    cells = librarian._split_row("| a\x00b | c |")
+    assert cells[0] == "a\x00b"
+
+
+def test_claim_table_inside_code_fence_is_ignored():
+    """FACT_CHECK_PROTOCOL.md shows an example table; docs must not be audited as reports."""
+    text = ("Example of the required shape:\n\n```markdown\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | example | Wrong | |\n```\n")
+    assert librarian.audit_claim_sources(text) is None
+
+
+def test_escaped_pipe_does_not_shift_the_source_column():
+    """A \\| inside claim text must not misalign columns and fake an unsourced row."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | he said a \\| b | Wrong | [src](http://a.example) |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 0
+
+
+def test_ragged_row_shorter_than_header_counts_as_unsourced():
+    """A row missing its Source cell is unsourced, not silently skipped."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n| 1 | x | Wrong |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_audit_detects_claim_table_without_numeric_id_column():
+    """The regression that FAILed review: 3 real reports number differently, 2 of them
+    100% unsourced. Keying off a leading digit skipped exactly the worst cases."""
+    table = ("| Claim | Reality |\n|---|---|\n"
+             "| China makes unlimited fuel | No such thing |\n"
+             "| It runs on seawater | Also no |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats is not None, "a claim table without an ID column must still be detected"
+    assert stats == {"total": 2, "unsourced": 2, "documented": 0, "ratio": 1.0}
+
+
+def test_audit_accepts_bare_url_as_a_source():
+    """A bare URL in the Source cell is a citation; dropping this branch must fail a test."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | x | Wrong | https://eia.gov/report |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 0
+
+
+def test_url_in_claim_text_does_not_launder_an_uncited_row():
+    """Only the Source cell counts — a URL quoted in the claim can't stand in for a citation."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 1 | He cited https://example.com/paper | Wrong | |\n")
+    assert librarian.audit_claim_sources(table)["unsourced"] == 1
+
+
+def test_non_claim_tables_are_ignored():
+    """Forecast scoreboards and chapter tables must not be audited as claims."""
+    text = ("| # | Who | Prediction | Due | Status |\n|---|---|---|---|---|\n"
+            "| F1 | Zeihan | oil hits minimums | 2026 | Open |\n\n"
+            "| Timestamp | Section |\n|---|---|\n| 00:00 | Intro |\n")
+    assert librarian.audit_claim_sources(text) is None
+
+
+def test_ceiling_matches_protocol_doc():
+    """The comment claims doc and code can't drift; this is what actually prevents it."""
+    doc = Path("FACT_CHECK_PROTOCOL.md").read_text(encoding="utf-8")
+    pct = f"{librarian.UNSOURCED_CLAIM_CEILING:.0%}"
+    assert pct in doc, f"protocol doc does not mention the {pct} ceiling defined in code"
+
+
+def test_audit_counts_suffixed_claim_ids():
+    """Rows numbered 25a/25b are real — the Stratfor report used them."""
+    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+             "| 25a | x | Wrong | [s](http://a.example) |\n"
+             "| 25b | y | Wrong | |\n")
+    stats = librarian.audit_claim_sources(table)
+    assert stats["total"] == 2 and stats["unsourced"] == 1
+
+
+def test_audit_ignores_urls_in_surrounding_prose():
+    """A link in prose around the table must not launder an unsourced row."""
+    text = ("See https://example.com for background.\n\n"
+            "| # | Claim | Grade | Source |\n|---|---|---|---|\n"
+            "| 1 | claim | Wrong | |\n\n"
+            "More context at https://example.org/other\n")
+    stats = librarian.audit_claim_sources(text)
+    assert stats == {"total": 1, "unsourced": 1, "documented": 0, "ratio": 1.0}
+
+
+def test_source_audit_warns_and_flags_ceiling(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 3, "unsourced": 3, "ratio": 1.0})
+    assert "NOT publishable as a fact-check" in caplog.text
+    assert "Rule 0" in caplog.text
+
+
+def test_source_audit_stays_quiet_when_fully_sourced(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 4, "unsourced": 0, "ratio": 0.0})
+    assert caplog.text == ""
+
+
+def test_source_audit_below_ceiling_warns_without_publishability_verdict(caplog):
+    """One unsourced row out of twenty is worth flagging, not worth condemning."""
+    with caplog.at_level("WARNING"):
+        librarian.emit_claim_source_audit({"total": 20, "unsourced": 1, "ratio": 0.05})
+    assert "1 of 20" in caplog.text
+    assert "NOT publishable" not in caplog.text

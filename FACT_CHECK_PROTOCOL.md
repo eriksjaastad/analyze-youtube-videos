@@ -64,10 +64,54 @@ in the note column, not in place of the search.
 
 ---
 
+## Rule 0 — the source goes in the row
+
+**Every claim-table row carries its own source link. A bulk `## Sources` list at the bottom of the
+report does not satisfy this and never has.**
+
+This is rule zero because it is the one that makes the other seven enforceable, and because
+skipping it is what let F1 and F3 through undetected.
+
+**The failure it prevents:** in a claim table with no source column, a claim you fetched a primary
+document for and a claim you invented from memory **render identically**. There is no visual
+difference, so there is nothing for you, a reviewer, or Erik to catch. A bulk source list at the
+bottom looks like diligence while proving nothing about any individual grade — the 2026-07-29
+report carried 40+ links and **49 of 49 claim rows had none bound to them.**
+
+**Required table shape.** The `Source` column is not optional and not last-minute:
+
+| # | Claim | Grade | Source | Note |
+|---|---|---|---|---|
+| 1 | "80% of their energy is imported" | ❌ Wrong | [SASAC 2025](http://en.sasac.gov.cn/2025/04/01/c_19074.htm) | Self-sufficiency is 84.7%; import dependence ~15% |
+
+- **An empty Source cell means the grade is `⚪ Unchecked`.** Not "I'll add it later" — the
+  emptiness *is* the grade. This makes the omission self-reporting.
+- **Link the document you actually read**, not a search page and not a summary of it.
+- **`❓ Unverified` still needs a Source cell**, holding what you searched — "searched X, Y, Z;
+  no primary source found." That is the difference between Unverified and Unchecked, made visible.
+- Keep the bottom-of-report `## Sources` section as a reading list. It is a convenience, never
+  the citation.
+
+### Where Rule 0 came from
+
+The **research layer** has required primary-source verification since 2026-06-27
+(`extract_research_targets()` plus the `## Research Addendum` spec in `README.md`), including a
+`Sources consulted` line. That rule was never wrong — it was **unenforced**, and unenforced in a
+specific way worth naming: it asked for sources *somewhere in the report* rather than *bound to a
+claim*. Measured across the library: 6 of 128 reports carry an Addendum at all, and **all 8
+reports with a claim table have 100% unsourced rows.**
+
+Rule 0 does not replace that layer (see [the two layers](#relationship-to-the-research-addendum)
+below — they stay separate). It moves the *citation* from the end of the report into the claim
+row, where its absence is visible instead of silent.
+
+---
+
 ## Standing rules
 
-1. **Every graded claim carries a fetched source or the grade `⚪ Unchecked`.** No exceptions for
-   claims that seem obvious, that you remember, or that are "just background."
+1. **Every graded claim carries a fetched source or the grade `⚪ Unchecked`** — in its own row,
+   per Rule 0. No exceptions for claims that seem obvious, that you remember, or that are "just
+   background."
 2. **Fetch the primary document for any grade that references a specific source** — the paper, the
    filing, the decree, the article, the speaker's own prior work. Secondary summaries drift, and
    the drift is invisible.
@@ -90,13 +134,13 @@ in the note column, not in place of the search.
 
 ## Grades
 
-| Grade | Meaning | Requires |
+| Grade | Meaning | Source cell must contain |
 |---|---|---|
-| ✅ Confirmed | Checkable and checked out | Fetched source |
-| ⚠️ Imprecise / Refined | Directionally right, specifics off | Fetched source + the correct figure |
-| ❌ Wrong | Materially false as stated | Fetched source that contradicts it |
-| ❓ Unverified | Searched, no adequate source exists | A record of what was searched |
-| ⚪ Unchecked | Not investigated | Nothing — but must be labelled, never upgraded |
+| ✅ Confirmed | Checkable and checked out | Link to the fetched source |
+| ⚠️ Imprecise / Refined | Directionally right, specifics off | Link to the source carrying the correct figure |
+| ❌ Wrong | Materially false as stated | Link to the source that contradicts it |
+| ❓ Unverified | Searched, no adequate source exists | What you searched — "searched X, Y; nothing primary" |
+| ⚪ Unchecked | Not investigated | Empty. The emptiness is the grade |
 
 `❓ Unverified` and `⚪ Unchecked` are different and the difference matters. Unverified means the
 evidence isn't out there; Unchecked means you didn't look. Never quietly promote either to a grade.

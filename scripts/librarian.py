@@ -400,6 +400,183 @@ def build_tutorial_prompt(data: Dict[str, Any]) -> str:
 BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 
+_MD_LINK_RE = re.compile(r'\[[^\]]+\]\([^)]+\)|https?://')
+_TABLE_SEP_RE = re.compile(r'^\|[\s:|-]+\|$')
+_FENCE_RE = re.compile(r'^\s*(```|~~~)')
+# Threshold from FACT_CHECK_PROTOCOL.md. Both live in one place only because
+# test_ceiling_matches_protocol_doc() asserts they agree — comments don't prevent drift.
+UNSOURCED_CLAIM_CEILING = 0.20
+# A table is a claim table if any header cell contains "claim". Nothing more.
+#
+# Two earlier versions tried to be cleverer and both failed review for the same reason.
+# Keying off a numbered first column missed tables that don't number. Adding an allowlist
+# of verdict words (grade/verdict/reality/...) missed "Verified?" and "Holds up?". A survey
+# of every claim-bearing table in the library found 16 distinct header shapes and the
+# verdict column spelled at least seven ways — an allowlist will always be one spelling
+# behind, and each miss is invisible rather than noisy.
+#
+# So: match the one word that is actually invariant. Two of the 16 shapes are not grading
+# tables ("# | beat | claim", "# | claim | where") and will be flagged anyway. That is the
+# right trade — this reports and never blocks, so a false positive costs one ignored
+# warning while a false negative costs an unsourced grade shipped into the library.
+_CLAIM_HEADER = "claim"
+
+
+_UNESCAPED_PIPE_RE = re.compile(r'(?<!\\)\|')
+
+
+def _split_row(line: str) -> List[str]:
+    """Split a markdown table row into trimmed cells, dropping the outer pipes.
+
+    Splits on unescaped pipes only, so a \\| inside claim text can't shift column
+    alignment and mislabel a sourced row as unsourced. Uses a lookbehind rather than a
+    placeholder swap — an earlier version substituted \\x00, which corrupted any literal
+    NUL byte in the source text.
+    """
+    cells = _UNESCAPED_PIPE_RE.split(line.strip())
+    # The outer pipes produce empty leading/trailing entries; drop only those.
+    if cells and not cells[0].strip():
+        cells = cells[1:]
+    if cells and not cells[-1].strip():
+        cells = cells[:-1]
+    return [c.strip().replace(r'\|', '|') for c in cells]
+
+
+_WORD_RE = re.compile(r'[a-z]+')
+
+
+def _is_unverified_grade(cell: str) -> bool:
+    """True only when the grade LEADS with Unverified, not merely mentions it.
+
+    Emoji and markdown emphasis are stripped by tokenisation, so "**🟡 Unverified**" and
+    "🟡 Unverified specifics" both match, while "Number confirmed, timing unverified"
+    does not — its primary grade is Confirmed, which the Grades table says needs a link.
+
+    Deliberately positional rather than an allowlist of assertive grade words. A previous
+    version listed confirmed/wrong/imprecise/... and could still be beaten by any spelling
+    absent from it ("Misleading, unverified"). Round two of this review failed on exactly
+    that shape of mistake at the header level; the fix is to stop enumerating vocabulary
+    and key on structure, which cannot fall behind.
+    """
+    words = _WORD_RE.findall(cell.lower())
+    return bool(words) and words[0] == "unverified"
+
+
+def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
+    """Count claim-table rows whose Source cell is empty.
+
+    Rule 0 of FACT_CHECK_PROTOCOL.md: the source goes in the row, because an unsourced
+    grade and a sourced grade are visually identical without it — which is how two of the
+    2026-08-14 overturns survived review. A bulk '## Sources' list proves nothing about
+    any individual grade, so it deliberately does not count here.
+
+    Detection reads the table HEADER, matching only on the word "claim" — see the note on
+    _CLAIM_HEADER for why every cleverer version failed. A table with no Source column at
+    all counts every row as unsourced, which is the correct reading of the 2026-08-14
+    report. Tables inside fenced code blocks are skipped so documentation examples of the
+    format don't get audited as real reports.
+
+    Only the Source cell is inspected, not the whole row, so a URL quoted inside the
+    claim text can't launder an uncited grade.
+
+    Returns None when the report contains no claim table (tutorial extractions, workflow
+    write-ups), so those are never nagged.
+    """
+    lines = analysis.splitlines()
+    total = unsourced = documented = 0
+    found_table = False
+    in_fence = False
+
+    # Only honour fences when they are balanced. An unclosed fence would otherwise latch
+    # the skip flag on and silently disable auditing for the rest of the document —
+    # returning None, indistinguishable from "this report has no claims". Over-auditing a
+    # stray fenced block is the safe direction: this warns, it never blocks.
+    fences_balanced = sum(1 for ln in lines if _FENCE_RE.match(ln)) % 2 == 0
+
+    i = 0
+    while i < len(lines) - 1:
+        if fences_balanced and _FENCE_RE.match(lines[i]):
+            in_fence = not in_fence
+            i += 1
+            continue
+        if in_fence:
+            i += 1
+            continue
+
+        line, nxt = lines[i].strip(), lines[i + 1].strip()
+        if not (line.startswith('|') and _TABLE_SEP_RE.match(nxt)):
+            i += 1
+            continue
+
+        header = [h.lower() for h in _split_row(line)]
+        if not any(_CLAIM_HEADER in h for h in header):
+            i += 1
+            continue
+
+        found_table = True
+        src_idx = next((n for n, h in enumerate(header) if "source" in h), None)
+        grade_idx = next((n for n, h in enumerate(header)
+                          if any(v in h for v in ("grade", "verdict", "verified", "reality",
+                                                  "holds up", "status", "assessment"))), None)
+        i += 2  # skip header and separator
+        while i < len(lines) and lines[i].strip().startswith('|'):
+            cells = _split_row(lines[i])
+            total += 1
+            # No Source column means nothing in this table is cited, by definition.
+            cell = cells[src_idx] if src_idx is not None and src_idx < len(cells) else ""
+            grade = (cells[grade_idx] if grade_idx is not None and grade_idx < len(cells)
+                     else "")
+            if _MD_LINK_RE.search(cell):
+                pass  # cited
+            elif cell and _is_unverified_grade(grade):
+                # A link-free Source cell is legitimate on exactly one grade: Unverified,
+                # where the protocol asks for the search trail instead ("searched X, Y;
+                # nothing primary found"). Counting that as unsourced would fire the
+                # warning at a report for complying, and a warning that punishes
+                # compliance is one people learn to ignore.
+                #
+                # Narrow on purpose. Accepting *any* prose here would let a "Detail" or
+                # "Note" column launder a whole uncited table — which is the 2026-08-14
+                # pattern exactly: prose in every row, links only in a list at the bottom.
+                documented += 1
+            else:
+                unsourced += 1
+            i += 1
+
+    if not found_table or not total:
+        return None
+    return {
+        "total": total,
+        "unsourced": unsourced,
+        "documented": documented,
+        "ratio": unsourced / total,
+    }
+
+
+def emit_claim_source_audit(stats: Dict[str, Any]) -> None:
+    """Warn when claim rows have an empty Source cell. Reports, never blocks."""
+    total, unsourced, ratio = stats["total"], stats["unsourced"], stats["ratio"]
+    documented = stats.get("documented", 0)
+    if not unsourced:
+        note = f" ({documented} carry a search trail rather than a link)" if documented else ""
+        logger.info(f"[fact-check] {total}/{total} claim rows carry a source{note}.")
+        return
+    over = ratio > UNSOURCED_CLAIM_CEILING
+    logger.warning("=" * 70)
+    logger.warning(f"[fact-check] {unsourced} of {total} claim rows have an EMPTY source "
+                   f"cell ({ratio:.0%}).")
+    logger.warning("[fact-check] Rule 0: the source goes IN the row. A bulk '## Sources'")
+    logger.warning("[fact-check] list at the bottom does not satisfy this.")
+    if documented:
+        logger.warning(f"[fact-check] ({documented} more carry a search trail rather than a "
+                       "link — those count as Unverified, not Unchecked.)")
+    if over:
+        logger.warning(f"[fact-check] !! Above the {UNSOURCED_CLAIM_CEILING:.0%} ceiling — this "
+                       "is NOT publishable as a fact-check.")
+        logger.warning("[fact-check] !! Either bind the sources or grade those rows Unchecked.")
+    logger.warning("=" * 70)
+
+
 def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] = None) -> Path:
     """
     Saves the final report to the library/ directory.
@@ -691,7 +868,9 @@ def emit_fact_check_protocol_reminder() -> None:
     logger.warning("[fact-check] Before grading any claim, read FACT_CHECK_PROTOCOL.md")
     if not FACT_CHECK_PROTOCOL_PATH.exists():
         logger.warning("[fact-check] !! FACT_CHECK_PROTOCOL.md NOT FOUND at repo root !!")
-    logger.warning("[fact-check]  1. No grade from memory. Unsearched == '/ Unchecked'.")
+    logger.warning("[fact-check]  0. SOURCE LINK GOES IN THE CLAIM ROW. A bulk source list at")
+    logger.warning("[fact-check]     the bottom does NOT count. Empty source cell == Unchecked.")
+    logger.warning("[fact-check]  1. No grade from memory. Unsearched == Unchecked.")
     logger.warning("[fact-check]  2. Fetch the primary source. A search snippet is not evidence.")
     logger.warning("[fact-check]  3. Search the speaker's framing and units FIRST, not yours.")
     logger.warning("[fact-check] Re-check every 'Wrong' grade in the speaker's favour before "
@@ -823,6 +1002,13 @@ def process_single_video(url: str, args) -> bool:
         formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
     else:
         formatted_date = datetime.now().strftime("%Y-%m-%d")
+
+    # Rule 0 audit runs on the way in, so an unsourced claim table is caught at the moment
+    # it lands rather than on a re-read months later. Reports, never blocks — a false
+    # positive costs one ignored warning, a missed one costs an unsourced grade in the library.
+    source_stats = audit_claim_sources(analysis)
+    if source_stats:
+        emit_claim_source_audit(source_stats)
 
     filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
 
