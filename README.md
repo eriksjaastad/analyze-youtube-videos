@@ -71,6 +71,11 @@ per video.
 Both modes carry a **Research Addendum** (see below) whenever the video makes
 external factual claims.
 
+> **Grading any claim is governed by [`FACT_CHECK_PROTOCOL.md`](FACT_CHECK_PROTOCOL.md).** Read it
+> before writing a report. The Research Addendum's per-claim verdicts
+> (`SUPPORTED`/`REFUTED`/`UNVERIFIED`/`DISPUTED`) are **evidence feeding** a claim-table grade,
+> never a substitute for one — the protocol has the mapping between the two layers.
+
 ---
 
 ## Project Structure

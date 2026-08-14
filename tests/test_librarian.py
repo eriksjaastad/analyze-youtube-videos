@@ -369,3 +369,60 @@ def test_geopolitics_avoids_known_colliding_keywords(unsafe):
     cfg = yaml.safe_load(Path("config/categories.yaml").read_text(encoding="utf-8"))
     geo = next(c for c in cfg["categories"] if c["id"] == "geopolitics")
     assert unsafe not in geo["keywords"]
+
+
+# --- fact-check protocol reminder ---------------------------------------------------
+# Reports land in library/, which is gitignored, so no PR or CI check ever sees them.
+# This warning is the pipeline's only enforcement point — hence tests that it actually fires.
+
+def test_fact_check_reminder_emits_core_rules(caplog):
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    out = caplog.text
+    assert "FACT_CHECK_PROTOCOL.md" in out
+    # The three rules that caused real overturns must be in the reminder itself, not
+    # only in the file — an agent that never opens the file still has to see them.
+    assert "No grade from memory" in out
+    assert "primary source" in out
+    assert "speaker's framing" in out
+
+
+def test_fact_check_reminder_flags_missing_protocol_file(caplog, tmp_path, monkeypatch):
+    """If the protocol file goes missing, say so loudly rather than pointing at nothing."""
+    monkeypatch.setattr(librarian, "FACT_CHECK_PROTOCOL_PATH", tmp_path / "gone.md")
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    assert "NOT FOUND" in caplog.text
+
+
+def test_fact_check_reminder_path_is_cwd_independent(caplog, tmp_path, monkeypatch):
+    """A gate that cries NOT FOUND when run from another directory is worse than no gate.
+
+    FACT_CHECK_PROTOCOL_PATH is anchored to __file__, so changing CWD must not affect it.
+    """
+    monkeypatch.chdir(tmp_path)
+    with caplog.at_level("WARNING"):
+        librarian.emit_fact_check_protocol_reminder()
+    assert "NOT FOUND" not in caplog.text
+
+
+def test_protocol_file_exists_at_repo_root():
+    """The reminder points at this path; a rename must break a test, not just the docs."""
+    assert librarian.FACT_CHECK_PROTOCOL_PATH.is_file()
+
+
+@patch("scripts.librarian.extract_research_targets", return_value={})
+@patch("scripts.librarian.check_flagged_channel", return_value=None)
+@patch("scripts.librarian.get_video_data")
+@patch("scripts.librarian.emit_fact_check_protocol_reminder")
+def test_reminder_is_wired_into_fetch_path(mock_reminder, mock_get, _flag, _targets, capsys):
+    """Covers the WIRING, not just the function.
+
+    The isolated tests above would still pass if a refactor dropped the call from
+    process_single_video() — this asserts it actually fires on the fetch that precedes
+    grading, and before the JSON the analyst reads.
+    """
+    mock_get.return_value = dict(VIDEO_STUB)
+    args = MagicMock(analysis_file=None, no_whisper=True, subdir=None, dry_run=False)
+    librarian.process_single_video("https://youtu.be/abc", args)
+    assert mock_reminder.called, "fact-check reminder is no longer called on the fetch path"

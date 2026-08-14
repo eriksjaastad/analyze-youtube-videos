@@ -11,21 +11,50 @@ If `PROGRESS.md` exists in the project root, read it FIRST before doing anything
 
 ## What This Is
 
-<!-- Floor manager: fill this in on your first session. One paragraph: what this project does, what breaks if it goes wrong. -->
+Erik drops a YouTube or TikTok URL; you fetch the transcript, **fact-check it against primary
+sources**, and file a graded report in `library/`. The product is not a summary — it is a
+**credibility judgment**, on the claims and on the person making them. Running analyst patterns
+accumulate across videos so a source can be promoted to "worth watching" or demoted to
+entertainment. Collections (`library/<name>/README.md`) define genre-specific treatments; read the
+relevant one before writing a report.
 
 Read `DECISIONS.md` before changing architecture or infrastructure.
 
 ## Stakes
 
-<!-- What's at risk? Dollars, user trust, data integrity, portfolio-wide impact? One concrete sentence. -->
+**Erik acts on these reports.** He uses them to decide who to trust on money, politics, work, and
+now climate — topics where believing a confident wrong number has real cost. A report that grades
+a false claim ✅, or grades a *correct* speaker ❌, is worse than no report: it launders an error
+into something he'll rely on and repeat. Reliability of the grades is the whole product.
 
 ## Gates
 
-<!-- Pre-flight checks before dangerous actions. At least one gate for the most destructive thing you can do in this project. -->
+**Before publishing any fact-check, `FACT_CHECK_PROTOCOL.md` is mandatory reading.** It encodes
+five named failure modes from a real 11% first-pass error rate. The three that matter most:
+
+1. **No grade from memory.** If you did not search it, it is `⚪ Unchecked` — a legitimate grade.
+   Assistant knowledge has a cutoff and most of what this library checks postdates it.
+2. **Fetch the primary document** for any grade that references a specific source. A search
+   snippet is a pointer, never evidence. This is absolute when asserting "he contradicts X."
+3. **Search the speaker's framing and units first.** A query built from your hypothesis will
+   find your hypothesis, and you'll grade a correct speaker as wrong.
+
+**Before declaring a fact-check done:** ask explicitly where you were *too harsh*, not just where
+you were too generous. That question is what catches errors made in your own favour.
 
 ## Incidents
 
-<!-- Add a dated entry the first time something breaks. Format: YYYY-MM-DD: what happened, what was learned. -->
+**2026-08-14 — five overturned grades in one report.** A fact-check of the ex-Stratfor geopolitics
+panel graded ~47 claims; an adversarial second pass overturned 5 and refined 14. Causes were all
+shortcuts, not hard calls: grading against a search summary instead of the source (which
+manufactured an accusation that a speaker had inflated his own written figure — he hadn't),
+searching a decile when the speaker said a quintile (which marked a *correct* speaker wrong),
+grading from memory without searching, refuting with unverified counterexamples, and letting a
+speaker's "best guess" hedge substitute for checking. Produced `FACT_CHECK_PROTOCOL.md`. Lesson:
+**a second pass is a backstop, not the mechanism — if the first pass needs it to be correct, the
+first pass is broken.** Also: agent count is not rigor. In that same run one agent exhausted its
+search budget, one spawned sub-agents and stopped without collecting them, and one never resolved
+its assigned figure.
 
 <!-- BEGIN scaffold:hygiene -->
 ## Locked Hygiene Contract
