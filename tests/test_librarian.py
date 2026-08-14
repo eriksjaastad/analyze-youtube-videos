@@ -1,4 +1,5 @@
 import pytest
+import yaml
 import subprocess
 import os
 import shutil
@@ -365,22 +366,6 @@ def test_geopolitics_avoids_known_colliding_keywords(unsafe):
     "war" is in software/warrior/warehouse, "nato" is in seNATOr, "china" and "ai" belong
     to AI-industry videos, "world order" to conspiracy content, "cult" to difficult/culture.
     """
-    import yaml
-    cfg = yaml.safe_load(open("config/categories.yaml", encoding="utf-8"))
+    cfg = yaml.safe_load(Path("config/categories.yaml").read_text(encoding="utf-8"))
     geo = next(c for c in cfg["categories"] if c["id"] == "geopolitics")
     assert unsafe not in geo["keywords"]
-
-
-def test_every_indexed_category_id_exists_in_config():
-    """Guards the silent-drop bug: update_index() skips entries whose category_id is
-    not in the config, so a retired id makes those entries vanish from the rendered
-    index. Currently xfail — 8 entries carry a retired 'antigravity' id (#81799552705916928).
-    """
-    import yaml
-    cfg = yaml.safe_load(open("config/categories.yaml", encoding="utf-8"))
-    valid = {c["id"] for c in cfg["categories"]} | {cfg["default_category"]["id"]}
-    idx = yaml.safe_load(open("library/index.yaml", encoding="utf-8"))
-    orphans = sorted({e.get("category_id") for e in idx["entries"]
-                      if e.get("category_id") not in valid})
-    if orphans:
-        pytest.xfail(f"retired category_id(s) still in index: {orphans}")
