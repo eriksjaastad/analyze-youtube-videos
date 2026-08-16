@@ -5,6 +5,7 @@ import tempfile
 import json
 import subprocess
 import re
+import shutil
 import yaml
 import time
 import random
@@ -105,7 +106,7 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
     """
     try:
         audio_path = temp_dir / "audio.mp3"
-        logger.info(f"[*] Downloading audio for Whisper transcription...")
+        logger.info("[*] Downloading audio for Whisper transcription...")
 
         cmd = [
             "yt-dlp",
@@ -178,7 +179,7 @@ def transcribe_with_whisper(audio_path: Path) -> Optional[str]:
         # Lazy import so faster-whisper is optional
         from faster_whisper import WhisperModel
 
-        logger.info(f"[*] Transcribing with Whisper (this may take a few minutes)...")
+        logger.info("[*] Transcribing with Whisper (this may take a few minutes)...")
 
         # Use base model with CPU and int8 for reasonable speed/quality tradeoff
         model = WhisperModel("base", device="cpu", compute_type="int8")
@@ -621,7 +622,7 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     chapter_section = ""
     if data.get('chapters'):
         chapter_lines = [f"- [{ch['timestamp']}] {ch['title']}" for ch in data['chapters']]
-        chapter_section = f"\n## Chapter Timeline\n\n" + "\n".join(chapter_lines) + "\n"
+        chapter_section = "\n## Chapter Timeline\n\n" + "\n".join(chapter_lines) + "\n"
 
     content = f"""---
 tags:
@@ -660,12 +661,15 @@ def get_category(title: str, tags: List[str]) -> Dict[str, str]:
     text_to_check = (title + " " + " ".join(tags)).lower()
     for cat in config.get("categories", []):
         for keyword in cat.get("keywords", []):
-            if keyword.lower() in text_to_check:
+            # Match complete words/phrases so short keywords such as "doe" do not
+            # classify ordinary prose containing "does" or "doesn't".  Category
+            # order remains authoritative: the first matching category wins.
+            if re.search(rf"\b{re.escape(keyword.lower())}\b", text_to_check):
                 return {"id": cat["id"], "name": cat["name"]}
                 
     return config.get("default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"})
 
-def update_index(entry_data: Dict[str, Any]) -> None:
+def update_index(entry_data: Dict[str, Any]) -> bool:
     """
     Updates library/index.yaml as Source of Truth, then renders 00_Index_Library.md.
     """
@@ -681,13 +685,59 @@ def update_index(entry_data: Dict[str, Any]) -> None:
                 logger.error(f"Error reading index.yaml: {e}")
                 index_data = {"entries": []}
             
-    # Check for duplicates
-    for entry in index_data["entries"]:
-        if entry.get("url") == entry_data["url"]:
-            logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
-            return
+    categories_path = Path("config/categories.yaml")
+    if not categories_path.exists():
+        logger.error(
+            "Cannot update index: category configuration %s is missing; leaving the index unchanged",
+            categories_path,
+        )
+        return False
 
-    index_data["entries"].append(entry_data)
+    with open(categories_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+    categories_config = config.get("categories", [])
+    default_cat = config.get(
+        "default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"}
+    )
+
+    supported_category_ids = {cat.get("id") for cat in categories_config}
+    supported_category_ids.add(default_cat["id"])
+
+    # Check for duplicates, but still write/render the repaired index below.
+    if any(entry.get("url") == entry_data["url"] for entry in index_data["entries"]):
+        logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
+    else:
+        index_data["entries"].append(entry_data)
+
+    # Repair retired/unknown category IDs before rendering. Keeping the entry in
+    # the source-of-truth YAML and placing it in the configured default bucket is
+    # safer than silently losing it from the Markdown index. This covers both
+    # legacy entries already in the index and a newly supplied entry.
+    unknown_entries = [
+        entry
+        for entry in index_data.get("entries", [])
+        if entry.get("category_id") not in supported_category_ids
+    ]
+    # This is a stateful catalog repair: preserve the pre-repair source of truth
+    # so an incorrect category configuration can be recovered.
+    if unknown_entries and index_yaml_path.exists():
+        backup_yaml_path = index_yaml_path.with_suffix(".yaml.bak")
+        try:
+            shutil.copy2(index_yaml_path, backup_yaml_path)
+        except OSError as e:
+            logger.error("Could not back up index before category repair: %s", e)
+            return False
+
+    for entry in unknown_entries:
+        category_id = entry.get("category_id")
+        entry_label = entry.get("title") or entry.get("url") or "<untitled entry>"
+        logger.warning(
+            "Entry %r has unknown category_id %r; falling back to default category %r",
+            entry_label,
+            category_id,
+            default_cat["id"],
+        )
+        entry["category_id"] = default_cat["id"]
     
     # Sort entries by date descending
     index_data["entries"].sort(key=lambda x: x.get("date", ""), reverse=True)
@@ -702,14 +752,8 @@ def update_index(entry_data: Dict[str, Any]) -> None:
     md_content = "# 📚 YouTube Knowledge Library\n\n"
     
     # Group by category
-    categories_path = Path("config/categories.yaml")
-    categories_config = []
-    if categories_path.exists():
-        with open(categories_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-            categories_config = config.get("categories", [])
-            default_cat = config.get("default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"})
-            categories_config.append(default_cat)
+    if not any(cat.get("id") == default_cat["id"] for cat in categories_config):
+        categories_config.append(default_cat)
             
     for cat in categories_config:
         cat_entries = [e for e in index_data["entries"] if e.get("category_id") == cat["id"]]
@@ -721,6 +765,7 @@ def update_index(entry_data: Dict[str, Any]) -> None:
             
     atomic_write(index_md_path, md_content)
     logger.info(f"Updated index YAML and rendered Markdown at {index_md_path}")
+    return True
 
 def update_queue(url: str, title: str, channel: str, filepath: Path) -> None:
     """
@@ -1010,6 +1055,14 @@ def process_single_video(url: str, args) -> bool:
     if source_stats:
         emit_claim_source_audit(source_stats)
 
+    categories_path = Path("config/categories.yaml")
+    if not categories_path.exists():
+        logger.error(
+            "Cannot save video: category configuration %s is missing",
+            categories_path,
+        )
+        return False
+
     filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
 
     # Determine category
@@ -1029,8 +1082,9 @@ def process_single_video(url: str, args) -> bool:
     if filepath.parent != LIBRARY_DIR:
         entry_data["collection"] = filepath.parent.name
 
+    if not update_index(entry_data):
+        return False
     update_queue(url, data['title'], data['channel'], filepath)
-    update_index(entry_data)
     return True
 
 
@@ -1094,6 +1148,8 @@ def main() -> None:
         logger.info(f"\n{'='*60}")
         logger.info(f"BATCH COMPLETE: {succeeded} succeeded, {failed} failed, {skipped} skipped (already in library)")
         logger.info(f"{'='*60}")
+        if failed:
+            sys.exit(1)
         return
 
     # Single URL mode

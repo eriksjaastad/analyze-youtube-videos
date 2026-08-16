@@ -57,7 +57,7 @@ def aggregate_library(category: Optional[str] = None) -> str:
             # Check context budget (approx 4 chars per token)
             current_chars = len(content)
             if (total_chars + current_chars) / 4 > MAX_TOKENS:
-                logger.warning(f"Context budget exceeded. Summarizing remaining documents.")
+                logger.warning("Context budget exceeded. Summarizing remaining documents.")
                 summary = summarize_document(filename, content)
                 aggregated_text += summary
                 total_chars += len(summary)

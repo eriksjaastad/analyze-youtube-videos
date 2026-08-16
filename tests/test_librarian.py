@@ -1,8 +1,5 @@
 import pytest
 import yaml
-import subprocess
-import os
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from scripts.librarian import clean_srt, get_video_data, check_flagged_channel, extract_research_targets
@@ -326,9 +323,9 @@ def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
 
 
 # --- get_category() keyword routing -------------------------------------------------
-# get_category() does SUBSTRING matching over (title + tags) and returns on the FIRST
-# matching category in config order. That makes short keywords dangerous: a keyword that
-# happens to appear inside an unrelated phrase silently steals every video containing it.
+# get_category() uses word-boundary matching over (title + tags) and returns on the FIRST
+# matching category in config order. Category order therefore remains part of the routing
+# contract while short keywords no longer match inside unrelated words.
 # These tests pin the collisions we have already been bitten by.
 
 @pytest.mark.parametrize(
@@ -356,12 +353,21 @@ def test_get_category_routes_expected(title, tags, expected):
     assert librarian.get_category(title, tags)["id"] == expected
 
 
+@pytest.mark.parametrize("title", ["What does this script do?", "What doesn't this script do?"])
+def test_get_category_doe_does_not_match_inside_words(title):
+    assert librarian.get_category(title, [])["id"] == "miscellaneous"
+
+
+def test_get_category_matches_standalone_doe_keyword():
+    assert librarian.get_category("DOE", [])["id"] == "agentic_workflows"
+
+
 @pytest.mark.parametrize(
     "unsafe",
     ["war", "nato", "china", "world order", "cult", "ai"],
 )
 def test_geopolitics_avoids_known_colliding_keywords(unsafe):
-    """These substrings appear inside unrelated words or other genres' stock phrases.
+    """These broad keywords collide with unrelated words or other genres' stock phrases.
 
     "war" is in software/warrior/warehouse, "nato" is in seNATOr, "china" and "ai" belong
     to AI-industry videos, "world order" to conspiracy content, "cult" to difficult/culture.
@@ -369,6 +375,131 @@ def test_geopolitics_avoids_known_colliding_keywords(unsafe):
     cfg = yaml.safe_load(Path("config/categories.yaml").read_text(encoding="utf-8"))
     geo = next(c for c in cfg["categories"] if c["id"] == "geopolitics")
     assert unsafe not in geo["keywords"]
+
+
+def test_update_index_falls_back_for_unknown_category(tmp_path, monkeypatch, caplog):
+    """Unknown legacy IDs stay in YAML/Markdown under the configured default."""
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    config_root = tmp_path / "config"
+    config_root.mkdir()
+    (config_root / "categories.yaml").write_text(
+        "categories:\n"
+        "  - id: supported\n"
+        "    name: 'Supported'\n"
+        "default_category:\n"
+        "  id: fallback\n"
+        "  name: 'Fallback'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
+    monkeypatch.chdir(tmp_path)
+
+    index = {
+        "entries": [
+            {"title": "Legacy entry", "channel": "Old", "date": "2026-01-01",
+             "url": "https://example.test/legacy", "category_id": "retired"},
+            {"title": "Supported entry", "channel": "New", "date": "2026-01-02",
+             "url": "https://example.test/supported", "category_id": "supported"},
+        ]
+    }
+    (library_root / "index.yaml").write_text(yaml.safe_dump(index), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        librarian.update_index({
+            "title": "New entry",
+            "channel": "New",
+            "date": "2026-01-03",
+            "url": "https://example.test/new",
+            "category_id": "new-retired",
+            "filepath": "library/new.md",
+        })
+
+    rendered_index = yaml.safe_load((library_root / "index.yaml").read_text(encoding="utf-8"))
+    entries = rendered_index["entries"]
+    assert len(entries) == 3
+    assert {entry["title"] for entry in entries} == {"Legacy entry", "Supported entry", "New entry"}
+    assert next(entry for entry in entries if entry["title"] == "Legacy entry")["category_id"] == "fallback"
+    assert next(entry for entry in entries if entry["title"] == "New entry")["category_id"] == "fallback"
+    markdown = (library_root / "00_Index_Library.md").read_text(encoding="utf-8")
+    assert "Legacy entry" in markdown
+    assert "Supported entry" in markdown
+    assert "New entry" in markdown
+    assert "unknown category_id 'retired'" in caplog.text
+    backup = yaml.safe_load((library_root / "index.yaml.bak").read_text(encoding="utf-8"))
+    assert backup["entries"][0]["category_id"] == "retired"
+
+
+def test_update_index_leaves_index_unchanged_when_categories_config_is_missing(
+    tmp_path, monkeypatch, caplog
+):
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
+    monkeypatch.chdir(tmp_path)
+
+    index_path = library_root / "index.yaml"
+    original = {
+        "entries": [
+            {
+                "title": "Existing entry",
+                "url": "https://example.test/existing",
+                "category_id": "supported",
+            }
+        ]
+    }
+    original_yaml = yaml.safe_dump(original)
+    index_path.write_text(original_yaml, encoding="utf-8")
+
+    with caplog.at_level("ERROR"):
+        assert librarian.update_index(
+            {
+                "title": "New entry",
+                "url": "https://example.test/new",
+                "category_id": "retired",
+            }
+        ) is False
+
+    assert index_path.read_text(encoding="utf-8") == original_yaml
+    assert not (library_root / "00_Index_Library.md").exists()
+    assert "category configuration" in caplog.text
+
+
+@patch("scripts.librarian.get_video_data")
+@patch("scripts.librarian.save_to_library")
+def test_process_single_video_fails_before_writes_when_categories_config_is_missing(
+    mock_save, mock_get, tmp_path, monkeypatch, caplog
+):
+    monkeypatch.chdir(tmp_path)
+    analysis_path = tmp_path / "analysis.md"
+    analysis_path.write_text("analysis", encoding="utf-8")
+    mock_get.return_value = dict(VIDEO_STUB)
+    mock_save.return_value = tmp_path / "report.md"
+    args = MagicMock(
+        analysis_file=str(analysis_path), no_whisper=True, subdir=None, dry_run=False
+    )
+
+    with caplog.at_level("ERROR"):
+        assert librarian.process_single_video("https://youtu.be/abc", args) is False
+
+    mock_save.assert_not_called()
+    assert "category configuration" in caplog.text
+
+
+def test_batch_mode_exits_nonzero_when_a_video_fails(tmp_path, monkeypatch):
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: ["url"])
+    monkeypatch.setattr(librarian, "process_single_video", lambda *_args: False)
+    monkeypatch.setattr(librarian.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "profile", "--delay", "0"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        librarian.main()
+
+    assert exc_info.value.code == 1
 
 
 # --- fact-check protocol reminder ---------------------------------------------------

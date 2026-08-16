@@ -1,5 +1,4 @@
 import pytest
-import hashlib
 from scripts.config import validate_json_data, create_temp_dir_name, select_subtitle
 
 def test_validate_json_data():
@@ -88,4 +87,3 @@ def test_validate_json_data_types():
     # Test with unexpected types
     assert validate_json_data(123)[0] is False
     assert validate_json_data([])[0] is False
-

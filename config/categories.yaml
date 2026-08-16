@@ -9,12 +9,11 @@ categories:
   # Also ordered BEFORE ai_automation, for the same reason. Geopolitics videos routinely carry
   # tags like "AI drone warfare", which ai_automation's bare "ai" keyword swallows — that is how
   # the ex-Stratfor panel first landed under "🤖 AI & Automation".
-  # Keyword choices are constrained by get_category()'s substring matching:
-  # no bare "war" (software / warrior / warehouse), no "nato" (seNATOr), no "china"
-  # (it would swallow AI-industry videos about Chinese models), and NO "world order" —
-  # it matches "New World Order", which is stock phrasing in the cults/politics_power
-  # genre, and this category is ordered ahead of politics_power so it would win.
-  # The category NAME may say "World Order"; only keywords are substring-matched.
+  # Keyword choices are still deliberately specific: broad terms can match unrelated
+  # standalone words, and "world order" matches "New World Order", which is stock
+  # phrasing in the cults/politics_power genre. This category is ordered ahead of
+  # politics_power, so that keyword would win there. The category NAME may say
+  # "World Order"; only configured keywords are matched.
   - id: geopolitics
     name: "🌍 Geopolitics & World Order"
     keywords: ["geopolitics", "geopolitical", "deglobalization", "taiwan",
@@ -36,8 +35,7 @@ categories:
     keywords: ["python", "code", "engineering", "software", "git"]
   - id: politics_power
     name: "🏛️ Politics & Power"
-    # No bare "cult" — get_category() does substring matching, so it would swallow
-    # difficult / culture / agriculture / cultivate. The rest are specific enough.
+    # No bare "cult" — reserve the keyword for explicit cult-related terms.
     keywords: ["politics", "political", "authoritarian", "religion", "dominionism", "propaganda"]
 default_category:
   id: miscellaneous
