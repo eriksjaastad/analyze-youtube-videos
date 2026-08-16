@@ -1,18 +1,37 @@
 # Fact-Check Protocol
 
-**Purpose:** make the *first* pass reliable. A second adversarial pass is a backstop, not the
-mechanism — if the first pass needs it to be correct, the first pass is broken.
+**Purpose:** make the *first* pass reliable. A second adversarial pass should be a backstop — if the
+first pass needs it to be correct, the first pass is broken. **That remains the goal. It is not yet
+the measured reality: see F7.**
 
-**Origin:** 2026-08-14. A fact-check of the ex-Stratfor geopolitics panel graded ~47 claims. An
-adversarial second pass overturned **5** and refined **14** — an ~11% materially-wrong rate on the
-one thing this library exists to do. Every one of the five traces to a *nameable* shortcut, not to
-bad luck or a hard call. The shortcuts are listed below, and each has a rule that prevents it.
+**Origin, in two parts.**
+
+**2026-07-29 — the geopolitics report.** A fact-check of the ex-Stratfor panel graded ~47 claims. An
+adversarial second pass overturned **5** and refined **14** — an ~11% materially-wrong rate on the one
+thing this library exists to do. Every one traced to a *nameable* shortcut, not to bad luck or a hard
+call. Those shortcuts are **F1–F5**.
+
+**2026-08-14 — the Galpin report.** A fact-check filed *without* the fan-out was later re-run with
+nine adversarial agents. **15 of 24 grades changed — a ~50% revision rate**, plus a fabricated author
+attribution, two mis-sourced citations, and a `⚪ Unchecked` block concealing the most harmful material
+in the source. That produced **F6** (silent omission) and **F7** (unreviewed first passes are
+provisional), and forced the correction now embedded in F4 — where this document was found to have
+committed the very failure it documents.
+
+**The through-line:** every failure mode here was discovered by checking work that already looked
+finished. None was caught by the person doing it, at the time they did it. That is the argument for
+the second pass, and the reason this file keeps its errors visible instead of quietly editing them
+out.
 
 ---
 
-## The five failure modes
+## The seven failure modes
 
-Diagnosed from the actual overturns. Learn these by name; they recur.
+Diagnosed from actual overturns. Learn these by name; they recur.
+
+F1–F5 came from the 2026-07-29 geopolitics report. **F6 and F7 were added 2026-08-14** after a
+nine-agent adversarial pass on the Galpin report revised **15 of 24 grades** — and they are the two
+that describe how a report can look compliant while being unreliable.
 
 ### F1 — Graded against a search snippet instead of the source
 **What happened:** claimed a speaker's on-air number was "inflated against his own written work,"
@@ -45,12 +64,34 @@ publishable grade. "I'm confident" is not a source.
 
 ### F4 — Refuted from memory; the refutation was never checked
 **What happened:** refuted "Russia never won an offensive war" with four counterexamples from
-memory. Two didn't qualify — the Polish partitions weren't a war, and the 1944–45 Berlin drive
-capped a war Russia didn't start. The claim *was* refutable, but not by the evidence I gave.
+memory. The 1944–45 Berlin drive didn't qualify — it capped a war Russia didn't start. The claim
+*was* refutable, but not by all of the evidence I gave.
 
 **Rule:** **your counterexample is a claim and meets the same bar as theirs.** Verify every
 example you use to knock something down. A wrong refutation is worse than no refutation: it looks
 like diligence and isn't.
+
+> **⚠️ This section committed F4 while documenting F4. Corrected 2026-08-14.**
+>
+> The original text listed a *second* disqualified counterexample: "the Polish partitions weren't a
+> war." **That is false, and it was asserted from memory without a search — the exact behaviour this
+> section exists to prevent.** There were two real wars, both initiated by Russia and both won:
+>
+> - **[Polish–Russian War of 1792](https://en.wikipedia.org/wiki/Polish%E2%80%93Russian_War_of_1792)**
+>   (18 May – 27 Jul 1792). Russia under Catherine the Great invaded; Russian victory; produced the
+>   Second Partition.
+> - **[Kościuszko Uprising](https://en.wikipedia.org/wiki/Ko%C5%9Bciuszko_Uprising)** (Mar–Dec 1794).
+>   Major combat including Maciejowice and the storming of Praga; Russo-Prussian victory; produced the
+>   Third Partition and erased the Commonwealth for 123 years.
+>
+> So the partitions *were* a legitimate counterexample, and the protocol was **wrong to disqualify
+> them.** Found by a parallel session re-checking the geopolitics report; verified here against the
+> primary accounts before this edit was made, rather than accepted on a peer's say-so.
+>
+> **Keep this correction visible rather than deleting the error.** A document that teaches "verify
+> your counterexamples" using an unverified counterexample is worse than one that doesn't teach it —
+> and the nesting is the most convincing evidence the failure mode is real. F4 is not a beginner's
+> mistake you outgrow. It caught the person writing the rule against it.
 
 ### F5 — Accepted the speaker's hedge instead of checking
 **What happened:** a speaker prefaced an attribution with "best guess," so I graded it
@@ -61,6 +102,43 @@ and the weapons worked differently than he said. Three errors passed because he 
 **Rule:** **a hedge changes how harshly you judge the speaker, never whether you check.** Grade
 the claim on the evidence, then note the hedge as mitigation. "He flagged it as speculation" goes
 in the note column, not in place of the search.
+
+### F6 — Silent omission, which is a grade whether you admit it or not
+**What happened (2026-08-14, Galpin report):** the first pass graded 24 claims and *silently skipped*
+the rest of the checkable ones. It reported 4 Unchecked (17%) and looked compliant with the Unchecked
+floor. The true figure was far higher — the skipped claims simply weren't in the table to be counted.
+
+The omissions were **not random.** When the second pass graded them, **every single one came back
+against the speaker**: the magnesium form, the "moderate to strong evidence" table claim, "all diets
+just reduce intake," the gardening-equivalence claim, the vitamin D threshold, "nobody needs
+supplements." Six for six.
+
+That is the mechanism worth understanding. You skip a claim because checking it looks like work, and
+the claims that look like work are disproportionately the vague, sweeping, hard-to-source ones — which
+are disproportionately the wrong ones. **Omission is not neutral. It is a systematic thumb on the
+scale in the speaker's favour, and it is invisible in the Unchecked count.**
+
+**Rule:** **enumerate every checkable claim first, then grade each one — including as `⚪ Unchecked`.**
+A claim you decided not to check must appear in the table. The Unchecked *budget* only means anything
+if the denominator is honest.
+
+### F7 — Treating an unreviewed first pass as finished work
+**What happened (2026-08-14, Galpin report):** a report was written and filed as a fact-check without
+the research fan-out (the Agent tool was unavailable) and without WebSearch (budget exhausted). When
+the fan-out was later run — nine agents, all instructed to refute — **15 of 24 original grades changed:
+11 against the speaker, 4 in his favour.** A ~50% revision rate. It also surfaced one **fabricated
+author attribution**, two mis-sourced citations, and a `⚪ Unchecked` block that turned out to be
+concealing the most harmful material in the source (6 of 7 cardiac claims wrong, including one that
+inverts lipid-management consensus).
+
+This is in tension with the standing framing below that "a second pass is a backstop, not the
+mechanism." That framing is aspirational and remains the goal. **The measured reality is that a first
+pass run without the fan-out is not reliable enough to publish.**
+
+**Rule:** **a report produced without the adversarial fan-out is provisional and must say so in its
+first ten lines.** Not a disclaimer for cover — a load-bearing status. Provisional reports do not seed
+analyst patterns, do not get cited by later reports, and are not represented to Erik as fact-checks.
+Say out loud what blocked the fan-out, so it can be unblocked.
 
 ---
 
@@ -173,13 +251,27 @@ and still cite. If the two layers disagree, say so in the report rather than sil
 
 ## The second pass
 
-Still run it on any fact-check that will be relied on — but as a **backstop**, not the mechanism.
+**Run it on any fact-check that will be relied on. Without it, the report is provisional (F7).**
+
+The aspiration below still stands — the first pass should be good enough that the second finds
+little. Measured against that aspiration, the 2026-08-14 run failed: a 50% revision rate. Treat the
+second pass as *required for publication* and the low-revision-rate goal as the standard you are
+trying to reach, not a licence to skip it.
 
 - Hand the finished grades to independent checkers and instruct them to **refute**, not confirm.
 - Require them to report where the original was **too harsh** as well as too generous. This is
   what catches F2, and nothing else does.
 - Record corrections **in the report** (a "what the second pass changed" section) rather than
   silently editing them. The corrections are a finding about method.
+- **Hunt for over-harshness explicitly, and expect to find some.** In the 2026-08-14 run, 4 of 15
+  revisions went *in the speaker's favour*, including one where he had **underclaimed** against the
+  source and was marked down for it. An agent that only finds the speaker wrong has not been
+  adversarial; it has been agreeable in the other direction.
+- **A wrong hunch that stayed Unchecked is a success, not a near-miss.** The same report flagged a
+  host's "15 basis points" figure as implausible — "probably 15%, or misheard" — while correctly
+  declining to grade it. The executive had said exactly 15 basis points. **The hunch was wrong and the
+  discipline saved it.** This is the single best argument for keeping `⚪ Unchecked` a legitimate
+  published grade: it is what a wrong guess looks like when it doesn't reach print.
 - **Do not treat agent count as rigor.** In the 2026-08-14 run all eight agents did eventually
   report, but getting there was not clean: one stopped after spawning its own sub-agents without
   collecting them and had to be re-prompted, two reported exhausting their search budget
