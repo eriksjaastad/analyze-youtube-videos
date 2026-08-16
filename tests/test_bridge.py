@@ -1,7 +1,6 @@
 import pytest
-import os
 from unittest.mock import patch, MagicMock
-from scripts.bridge import parse_decision, extract_skill_data, evaluate_utility
+from scripts.bridge import parse_decision
 
 def test_parse_decision():
     # Promote
@@ -44,4 +43,3 @@ def test_evaluate_utility_raises():
     from scripts.bridge import evaluate_utility
     with pytest.raises(NotImplementedError):
         evaluate_utility("Skill", "Context")
-

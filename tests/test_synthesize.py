@@ -1,6 +1,4 @@
 import pytest
-import os
-import re
 from unittest.mock import MagicMock, patch
 from scripts.synthesize import aggregate_library, synthesize_knowledge
 
@@ -44,4 +42,3 @@ def test_aggregate_library_no_md_files(mock_listdir):
     LIBRARY_DIR.exists.return_value = True
     mock_listdir.return_value = ["file.txt", "script.py"]
     assert aggregate_library() == ""
-

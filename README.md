@@ -164,7 +164,8 @@ the librarian still only fetches; the panel is a separate, opt-in component.
 1. Claude extracts the claims from the transcript and gathers web evidence per claim
    (`WebSearch` / Firecrawl).
 2. Claude writes a `claims.json` (`[{"id", "text", "evidence": [{"source", "snippet"}]}]`).
-3. Run the panel under the auxesis Doppler config:
+3. Run the external panel under the `auxesis-research-labs` Doppler config (this is a separate
+   project from this repository's local `analyze-youtube-videos/dev` config):
    ```bash
    doppler run -p auxesis-research-labs -c dev -- \
      uv run scripts/run_claim_panel.py --claims-file claims.json --budget-usd 0.50

@@ -5,6 +5,23 @@
 Run `pt info -p analyze-youtube-videos` for tech stack, env vars, infrastructure, and project-specific reference data.
 Run `pt memory search "analyze-youtube-videos"` before starting work for prior decisions and context.
 
+## Authorization — Check Doppler First
+
+Before saying "I need to log in" to a third-party CLI, check the configured Doppler project and config for an existing token. This repository's [`doppler.yaml`](doppler.yaml) pins `analyze-youtube-videos/dev`.
+
+- Check names first with `doppler secrets --project analyze-youtube-videos --config dev --only-names | grep -i <tool>`; never print secret values into chat or logs.
+- If a matching token exists, prefix the command with `doppler run --project analyze-youtube-videos --config dev -- <command>` instead of starting an interactive login.
+- This project is local-only and has no deploy/ops CLI. Do not create a token or add a Makefile unless a concrete project auth requirement appears.
+
+The optional research panel is external to this repository and uses the separate `auxesis-research-labs/dev` Doppler config:
+
+```bash
+doppler run -p auxesis-research-labs -c dev -- \
+  uv run scripts/run_claim_panel.py --claims-file claims.json --budget-usd 0.50
+```
+
+Do not replace this repository's local `analyze-youtube-videos/dev` pin with the external panel config.
+
 ## Session Continuity
 
 If `PROGRESS.md` exists in the project root, read it FIRST before doing anything else. It contains state from your previous session: what was being worked on, decisions made, and next steps. After reading, update or delete it as appropriate — stale PROGRESS.md files are worse than none.
