@@ -13,3 +13,4 @@ terminals/
 .venv/
 .env.doppler-backup
 .scratch/
+PROGRESS.md
