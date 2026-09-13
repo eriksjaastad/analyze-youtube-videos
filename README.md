@@ -189,7 +189,7 @@ anything that could improve Erik's projects — **Auxesis weighted first**. Meth
 1. **Generalize.** Strip product-hype down to the transferable principle (e.g. not "Hermes uses the
    Stripe Link CLI" → but "an agent can hold *scoped, human-approved* spending authority via one-time
    virtual cards").
-2. **Match the portfolio.** Query Open Brain (`pt graph find`, `pt memory search`) per idea to find
+2. **Match the portfolio.** Query ai-memory (`pt graph find`, `pt memory search`) per idea to find
    *genuine* connections to projects and past decisions.
 3. **Cull hard.** Generate candidate opportunities, then an adversarial critic kills the forced,
    trivial, or already-known ones — the same independence+criticism discipline as the panel. **Most
@@ -197,7 +197,7 @@ anything that could improve Erik's projects — **Auxesis weighted first**. Meth
    A scan that finds gold in every video is broken. (This also honors the no-forced-tie-in rule.)
    - **Liveness check (mandatory).** Before rating an opportunity, verify the matched project is
      **still active** and the cited fact is **still current**. A semantic match to a superseded project
-     on a stale Open Brain memory is a false positive — memories reflect when they were written.
+     on a stale ai-memory entry is a false positive — memories reflect when they were written.
      (Real example: a "HIGH" sandbox risk matched `data-vault-factory`, which is the *pre-Auxesis*
      factory, superseded; checking Auxesis directly showed the risk didn't exist. The match was stale,
      not real.)
