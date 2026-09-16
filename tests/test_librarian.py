@@ -827,3 +827,75 @@ def test_source_audit_below_ceiling_warns_without_publishability_verdict(caplog)
         librarian.emit_claim_source_audit({"total": 20, "unsourced": 1, "ratio": 0.05})
     assert "1 of 20" in caplog.text
     assert "NOT publishable" not in caplog.text
+
+
+# --- platform detection & field mapping ---------------------------------------
+
+def _mock_get_video_data(metadata_json, url):
+    """Drive get_video_data() with a canned yt-dlp metadata blob and SRT."""
+    with patch("subprocess.run") as mock_run, \
+         patch("os.listdir") as mock_listdir, \
+         patch("builtins.open", new_callable=MagicMock) as mock_open, \
+         patch("pathlib.Path.exists", return_value=True), \
+         patch("pathlib.Path.mkdir"), \
+         patch("tempfile.TemporaryDirectory") as mock_tempdir:
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout=metadata_json),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+        mock_tempdir.return_value.__enter__.return_value = "/tmp/fake_temp"
+        mock_listdir.return_value = ["transcript.en.srt"]
+        mock_open.return_value.__enter__.return_value.read.return_value = (
+            "1\n00:00:01,000 --> 00:00:02,000\nHello"
+        )
+        return get_video_data(url)
+
+
+def test_platform_detection_instagram_inverts_handle_and_display_name():
+    """Instagram puts the @handle in 'channel' and the display name in 'uploader',
+    the opposite of TikTok, and its uploader_id is an opaque numeric account ID.
+    The handle must land in uploader_id so the flagged-channel watchlist matches."""
+    metadata = (
+        '{"extractor_key": "Instagram", "title": "Video by jarrenrocks",'
+        ' "channel": "jarrenrocks", "uploader": "Jarren Rocks",'
+        ' "uploader_id": "40055242682", "id": "DcnKaQaPHTw"}'
+    )
+    data = _mock_get_video_data(metadata, "https://www.instagram.com/reel/DcnKaQaPHTw/")
+
+    assert data["platform"] == "instagram"
+    assert data["channel"] == "Jarren Rocks"
+    assert data["uploader_id"] == "jarrenrocks"
+
+
+def test_platform_detection_tiktok_keeps_native_uploader_id():
+    metadata = (
+        '{"extractor_key": "TikTok", "title": "T", "channel": "Display Name",'
+        ' "uploader": "handle", "uploader_id": "handle", "id": "9"}'
+    )
+    data = _mock_get_video_data(metadata, "https://www.tiktok.com/@handle/video/9")
+
+    assert data["platform"] == "tiktok"
+    assert data["channel"] == "Display Name"
+    assert data["uploader_id"] == "handle"
+
+
+def test_platform_detection_youtube_keeps_native_uploader_id():
+    metadata = (
+        '{"extractor_key": "Youtube", "title": "T", "uploader": "Some Channel",'
+        ' "uploader_id": "@somechannel", "id": "abc"}'
+    )
+    data = _mock_get_video_data(metadata, "https://youtube.com/watch?v=abc")
+
+    assert data["platform"] == "youtube"
+    assert data["channel"] == "Some Channel"
+    assert data["uploader_id"] == "@somechannel"
+
+
+def test_instagram_handle_is_matchable_by_the_flagged_channel_watchlist(flag_config):
+    """The point of the uploader_id inversion: a flagged IG handle actually matches."""
+    flag_config.write_text(yaml.dump({"channels": [
+        {"handle": "@jarrenrocks", "reason": "test", "severity": "low"},
+    ]}))
+    data = {"channel": "Jarren Rocks", "channel_id": "", "uploader_id": "jarrenrocks"}
+
+    assert check_flagged_channel(data) is not None
