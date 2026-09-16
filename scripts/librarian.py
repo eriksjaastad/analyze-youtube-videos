@@ -292,15 +292,26 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 platform = "tiktok"
                 # TikTok: 'channel' is display name, 'uploader' is handle
                 channel = metadata.get("channel") or metadata.get("uploader") or "Unknown_Channel"
+                uploader_id = metadata.get("uploader_id") or ""
+            elif "instagram" in extractor or "instagram.com" in url:
+                platform = "instagram"
+                # Instagram inverts the TikTok convention: 'uploader' is the
+                # display name, 'channel' is the @handle, and 'uploader_id' is
+                # an opaque numeric account ID that matches nothing a human
+                # would put on a watchlist. Map the handle into uploader_id so
+                # check_flagged_channel() can match it.
+                channel = metadata.get("uploader") or metadata.get("channel") or "Unknown_Channel"
+                uploader_id = metadata.get("channel") or ""
             else:
                 platform = "youtube"
                 channel = metadata.get("uploader") or "Unknown_Channel"
+                uploader_id = metadata.get("uploader_id") or ""
 
             return {
                 "title": metadata.get("title") or "Untitled",
                 "channel": channel,
                 "channel_id": metadata.get("channel_id") or "",
-                "uploader_id": metadata.get("uploader_id") or "",
+                "uploader_id": uploader_id,
                 "date": metadata.get("upload_date"),
                 "url": url,
                 "video_id": metadata.get("id") or "unknown",
@@ -1092,8 +1103,8 @@ def main() -> None:
     # Initialize Directories
     initialize_directories()
 
-    parser = argparse.ArgumentParser(description="The Librarian: Extract video transcripts from YouTube and TikTok.")
-    parser.add_argument("url", nargs="?", help="YouTube or TikTok URL to process")
+    parser = argparse.ArgumentParser(description="The Librarian: Extract video transcripts from YouTube, TikTok, and Instagram.")
+    parser.add_argument("url", nargs="?", help="YouTube, TikTok, or Instagram URL to process")
     parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
     parser.add_argument("--limit", type=int, help="Limit number of videos to process in batch mode")
     parser.add_argument("--delay", type=int, default=45, help="Delay in seconds between videos in batch mode (default: 45)")
@@ -1158,12 +1169,14 @@ def main() -> None:
 
     url = args.url
 
-    # URL Guard: Regex check for valid YouTube or TikTok URL
+    # URL Guard: Regex check for a supported platform URL
     supported_url_regex = re.compile(
-        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be|tiktok\.com)/.+$'
+        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be|tiktok\.com|instagram\.com)/.+$'
     )
     if not supported_url_regex.match(url):
-        logger.error(f"Error: \"{url}\" is not a valid YouTube or TikTok URL.")
+        logger.error(
+            f"Error: \"{url}\" is not a valid YouTube, TikTok, or Instagram URL."
+        )
         sys.exit(1)
 
     if not process_single_video(url, args):
