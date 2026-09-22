@@ -322,11 +322,8 @@ def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
     assert sorted(p.name for p in library_root.iterdir()) == [path.name]
 
 
-# --- get_category() keyword routing -------------------------------------------------
-# get_category() uses word-boundary matching over (title + tags) and returns on the FIRST
-# matching category in config order. Category order therefore remains part of the routing
-# contract while short keywords no longer match inside unrelated words.
-# These tests pin the collisions we have already been bitten by.
+# --- get_category() topic classification --------------------------------------------
+# Preserve legitimate neighbouring topics while resolving competing evidence.
 
 @pytest.mark.parametrize(
     "title,tags,expected",
@@ -335,18 +332,17 @@ def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
         # "AI drone warfare", and ai_automation's bare "ai" keyword was swallowing them.
         ("Four Ex-Stratfor Analysts Reunite to Predict How the World Ends",
          ["geopolitics", "AI drone warfare", "deglobalization"], "geopolitics"),
-        # "New World Order" is stock cults/politics_power phrasing. geopolitics is ordered
-        # ahead of politics_power, so a "world order" keyword there would hijack it.
+        # "New World Order" is also stock cults/politics_power phrasing.
         ("Christian Dominionism and the New World Order",
          ["dominionism", "religion"], "politics_power"),
         # Chinese-model AI videos must not be captured by a geopolitics "china" keyword.
         ("China's Free AI Just Embarrassed Claude", ["ai", "llm"], "ai_automation"),
-        # self_improvement stays ahead of ai_automation (the Seth Godin regression).
+        # The subject is quitting; AI is context (the Seth Godin regression).
         ("The Quitting Expert: Quit Now Before AI Makes The Choice For You",
          ["self-help", "quitting"], "self_improvement"),
         ("Claude Code Task System: ANTI-HYPE Agentic Coding", ["agentic", "ai"],
          "agentic_workflows"),
-        ("Day Trading Taxes Step By Step Guide", ["taxes"], "miscellaneous"),
+        ("Day Trading Taxes Step By Step Guide", ["taxes"], "finance"),
     ],
 )
 def test_get_category_routes_expected(title, tags, expected):
