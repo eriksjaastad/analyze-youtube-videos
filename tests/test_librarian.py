@@ -1,5 +1,6 @@
 import pytest
 import yaml
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from scripts.librarian import clean_srt, get_video_data, check_flagged_channel, extract_research_targets
@@ -487,15 +488,17 @@ def test_batch_mode_exits_nonzero_when_a_video_fails(tmp_path, monkeypatch):
     library_root.mkdir()
     monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
     monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
-    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: ["url"])
-    monkeypatch.setattr(librarian, "process_single_video", lambda *_args: False)
+    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: ["https://youtu.be/abc"])
+    process = MagicMock(return_value=False)
+    monkeypatch.setattr(librarian, "process_single_video", process)
     monkeypatch.setattr(librarian.time, "sleep", lambda *_args: None)
-    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "profile", "--delay", "0"])
+    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "https://youtube.com/@creator", "--delay", "0"])
 
     with pytest.raises(SystemExit) as exc_info:
         librarian.main()
 
     assert exc_info.value.code == 1
+    assert process.call_args.args[0] == "https://youtu.be/abc"
 
 
 # --- fact-check protocol reminder ---------------------------------------------------
@@ -895,3 +898,54 @@ def test_instagram_handle_is_matchable_by_the_flagged_channel_watchlist(flag_con
     data = {"channel": "Jarren Rocks", "channel_id": "", "uploader_id": "jarrenrocks"}
 
     assert check_flagged_channel(data) is not None
+
+
+@pytest.mark.parametrize("channel", [None, "", "   "])
+def test_instagram_missing_handle_warns_and_keeps_stable_owner_id(channel, flag_config, caplog):
+    flag_config.write_text(yaml.safe_dump({"channels": [
+        {"channel_id": "40055242682", "reason": "stable ID flag"},
+    ]}))
+    data = _mock_get_video_data(json.dumps({
+        "extractor_key": "Instagram", "title": "T", "channel": channel,
+        "uploader": "Display Name", "uploader_id": "40055242682", "id": "abc",
+    }), "https://instagram.com/reel/abc/")
+    assert data["uploader_id"] == ""
+    assert data["channel_id"] == "40055242682"
+    assert data["channel"] == "Display Name"
+    assert check_flagged_channel(data)["reason"] == "stable ID flag"
+    assert "handle-based watchlist matching is incomplete" in caplog.text
+
+
+@pytest.mark.parametrize("metadata,url,expected", [
+    ({"channel": " creator.name ", "uploader_id": "123"},
+     "https://instagram.com/other/reel/abc/", "creator.name"),
+    ({"uploader_id": "creator.name"}, "https://instagram.com/p/abc/", "creator.name"),
+    ({"uploader_id": "@creator.name"}, "https://instagram.com/p/abc/", "@creator.name"),
+])
+def test_instagram_recovers_handle_for_watchlist(metadata, url, expected, flag_config, caplog):
+    flag_config.write_text(yaml.safe_dump({"channels": [{"handle": "@creator.name", "reason": "flag"}]}))
+    metadata = {"extractor_key": "Instagram", "title": "T", "id": "abc",
+                "uploader": "Display Name", **metadata}
+    data = _mock_get_video_data(json.dumps(metadata), url)
+    assert data["uploader_id"] == expected
+    assert check_flagged_channel(data)["reason"] == "flag"
+    assert "handle unavailable" not in caplog.text
+
+
+@pytest.mark.parametrize("url", [
+    "https://instagram.com/p/abc/",
+    "https://instagram.com/reel/abc/",
+    "https://instagram.com/share/reel/abc/",
+    "https://instagram.com/creator/reel/abc/",
+    "https://instagram.com/creator/p/abc/?igsh=foo",
+    "https://instagram.com.evil.test/creator/reel/abc/",
+])
+def test_instagram_does_not_invent_handle_from_name_id_or_route(url, caplog):
+    data = _mock_get_video_data(json.dumps({
+        "extractor_key": "Instagram", "title": "T", "uploader": "creator",
+        "uploader_id": "123", "channel_id": "existing-id", "id": "abc",
+        "webpage_url": "https://instagram.com/creator/tv/abc/",
+    }), url)
+    assert data["uploader_id"] == ""
+    assert data["channel_id"] == "existing-id"
+    assert "handle unavailable" in caplog.text

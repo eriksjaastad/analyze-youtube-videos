@@ -13,6 +13,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlsplit
 from scripts.config import LIBRARY_DIR, TEMP_DIR, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
 
 def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_delay: float = 2.0) -> Optional[subprocess.CompletedProcess]:
@@ -209,6 +210,46 @@ def transcribe_with_whisper(audio_path: Path) -> Optional[str]:
         logger.error(f"Whisper transcription failed: {e}")
         return None
 
+def supported_platform(url: str) -> Optional[str]:
+    """Validate a CLI/video URL's scheme and exact host, not its extractor path.
+
+    Bare supported domains remain accepted. Credentials, ports, whitespace,
+    lookalike hosts and non-HTTP schemes are outside the librarian's URL contract.
+    """
+    if not url or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
+        return None
+    try:
+        has_scheme = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", url)
+        parsed = urlsplit(url if has_scheme else "https://" + url)
+    except ValueError:
+        return None
+    hosts = {"youtube.com": "youtube", "youtu.be": "youtube",
+             "tiktok.com": "tiktok", "instagram.com": "instagram"}
+    host = parsed.netloc.lower().removeprefix("www.")
+    if parsed.scheme not in {"http", "https"} or not parsed.path.strip("/"):
+        return None
+    return hosts.get(host)
+
+
+def _instagram_handle(metadata: Dict[str, Any]) -> str:
+    """Use extracted identity, never infer a handle from a name, numeric ID or URL.
+
+    Instagram post URLs can include an arbitrary username prefix, so even a
+    user-qualified URL cannot establish ownership of a post.
+    """
+    channel = (metadata.get("channel") or "").strip()
+    if channel:
+        return channel
+    # Older extractors sometimes supplied a handle in uploader_id; modern ones
+    # supply a numeric owner ID, which must not be used as a handle.
+    legacy = str(metadata.get("uploader_id") or "").strip()
+    if not legacy.isdecimal() and re.fullmatch(r"@?[A-Za-z0-9_.]{1,30}", legacy):
+        return legacy
+    logger.warning("Instagram handle unavailable: handle-based watchlist matching is incomplete; "
+                   "only available account IDs and display names can be checked.")
+    return ""
+
+
 def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict[str, Any]]:
     """
     Uses yt-dlp to fetch video metadata and SRT transcript.
@@ -289,6 +330,7 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
 
             # Detect platform from URL or extractor
             extractor = metadata.get("extractor_key", "").lower()
+            channel_id = metadata.get("channel_id") or ""
             if "tiktok" in extractor or "tiktok.com" in url:
                 platform = "tiktok"
                 # TikTok: 'channel' is display name, 'uploader' is handle
@@ -298,11 +340,14 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 platform = "instagram"
                 # Instagram inverts the TikTok convention: 'uploader' is the
                 # display name, 'channel' is the @handle, and 'uploader_id' is
-                # an opaque numeric account ID that matches nothing a human
-                # would put on a watchlist. Map the handle into uploader_id so
-                # check_flagged_channel() can match it.
+                # the numeric owner ID. Keep the handle and stable ID separate
+                # for check_flagged_channel().
                 channel = metadata.get("uploader") or metadata.get("channel") or "Unknown_Channel"
-                uploader_id = metadata.get("channel") or ""
+                uploader_id = _instagram_handle(metadata)
+                # Preserve the numeric owner ID separately for stable-ID watchlists.
+                owner_id = str(metadata.get("uploader_id") or "")
+                if not channel_id and owner_id.isdecimal():
+                    channel_id = owner_id
             else:
                 platform = "youtube"
                 channel = metadata.get("uploader") or "Unknown_Channel"
@@ -311,7 +356,7 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
             return {
                 "title": metadata.get("title") or "Untitled",
                 "channel": channel,
-                "channel_id": metadata.get("channel_id") or "",
+                "channel_id": channel_id,
                 "uploader_id": uploader_id,
                 "date": metadata.get("upload_date"),
                 "url": url,
@@ -1132,9 +1177,6 @@ def process_single_video(url: str, args) -> bool:
 
 
 def main() -> None:
-    # Initialize Directories
-    initialize_directories()
-
     parser = argparse.ArgumentParser(description="The Librarian: Extract video transcripts from YouTube, TikTok, and Instagram.")
     parser.add_argument("url", nargs="?", help="YouTube, TikTok, or Instagram URL to process")
     parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
@@ -1146,6 +1188,17 @@ def main() -> None:
     parser.add_argument("--subdir", help="File the report under library/<subdir>/ instead of the library root (topic collection)")
 
     args = parser.parse_args()
+
+    url = args.batch_profile or args.url
+    if not url:
+        parser.error("Either url or --batch-profile is required")
+    platform = supported_platform(url)
+    if platform is None:
+        parser.error("Expected a YouTube, TikTok, or Instagram HTTP(S) URL on a supported host")
+    if args.batch_profile and platform == "instagram":
+        parser.error("Instagram profile batches are unsupported; use an individual post or reel URL")
+
+    initialize_directories()
 
     # Batch profile mode
     if args.batch_profile:
@@ -1169,6 +1222,10 @@ def main() -> None:
         total = len(urls)
 
         for i, url in enumerate(urls):
+            if supported_platform(url) is None:
+                logger.error("[%s/%s] Unsupported video URL returned by profile: %s", i + 1, total, url)
+                failed += 1
+                continue
             if url in existing_urls:
                 logger.info(f"[{i+1}/{total}] SKIP (already in library): {url}")
                 skipped += 1
@@ -1194,22 +1251,6 @@ def main() -> None:
         if failed:
             sys.exit(1)
         return
-
-    # Single URL mode
-    if not args.url:
-        parser.error("Either url or --batch-profile is required")
-
-    url = args.url
-
-    # URL Guard: Regex check for a supported platform URL
-    supported_url_regex = re.compile(
-        r'^(https?://)?(www\.)?(youtube\.com|youtu\.?be|tiktok\.com|instagram\.com)/.+$'
-    )
-    if not supported_url_regex.match(url):
-        logger.error(
-            f"Error: \"{url}\" is not a valid YouTube, TikTok, or Instagram URL."
-        )
-        sys.exit(1)
 
     if not process_single_video(url, args):
         logger.error("CRITICAL ERROR: Processing failed.")
