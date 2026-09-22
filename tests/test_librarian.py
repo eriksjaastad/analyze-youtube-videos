@@ -57,6 +57,36 @@ def test_unflagged_channel_returns_none(flag_config):
     assert check_flagged_channel(data) is None
 
 
+@pytest.mark.parametrize("severity, expected", [("high", "HIGH"), ("WaTcH", "WATCH")])
+def test_flag_warning_normalizes_severity_and_multiline_reason(caplog, severity, expected):
+    entry = {
+        "severity": severity,
+        "reason": "  Check\tguest claims.\n\n  Consult   primary\r\nsources.  ",
+    }
+    with caplog.at_level("WARNING", logger=librarian.logger.name):
+        librarian.emit_flag_warning(entry, {"channel": "Example Channel"})
+
+    assert caplog.messages == [
+        "=" * 70,
+        f"[!!] FLAGGED CHANNEL [{expected}]: Example Channel",
+        "[!!] Check guest claims. Consult primary sources.",
+        "[!!] FACT-CHECK every factual claim against primary sources before saving.",
+        "=" * 70,
+    ]
+    assert all(record.levelname == "WARNING" for record in caplog.records)
+
+
+@pytest.mark.parametrize("entry", [{}, {"severity": None, "reason": None}, {"severity": "", "reason": ""}])
+def test_flag_warning_defaults_missing_or_empty_fields(caplog, entry):
+    with caplog.at_level("WARNING", logger=librarian.logger.name):
+        librarian.emit_flag_warning(entry, {"channel": "Example Channel"})
+
+    assert caplog.messages[1:3] == [
+        "[!!] FLAGGED CHANNEL [WATCH]: Example Channel",
+        "[!!] ",
+    ]
+
+
 def test_missing_config_returns_none(tmp_path, monkeypatch):
     monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", tmp_path / "nope.yaml")
     assert check_flagged_channel({"channel": "Anything", "channel_id": "UCx", "uploader_id": "@x"}) is None
