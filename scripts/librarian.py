@@ -9,6 +9,7 @@ import shutil
 import yaml
 import time
 import random
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -660,8 +661,29 @@ duration: "{data['duration_string']}"
     logger.info(f"[+] Saved to: {filepath}")
     return filepath
 
+def _category_text(text: str) -> str:
+    """Normalize punctuation/spacing while retaining whole Unicode words."""
+    return " " + " ".join(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text).casefold())) + " "
+
+
+def _category_evidence(fields: List[str], keywords: Dict[str, float]) -> float:
+    """Count each signal once; a phrase subsumes its nested keyword matches."""
+    matches = {phrase: weight for phrase, weight in keywords.items()
+               if any(phrase in field for field in fields)}
+    return sum(weight for phrase, weight in matches.items()
+               if not any(phrase != other and phrase in other for other in matches))
+
+
 def get_category(title: str, tags: List[str]) -> Dict[str, str]:
-    """Determine category from title and tags using config/categories.yaml."""
+    """Score topic evidence, independent of category order or library contents.
+
+    Titles carry three times the evidence of tags; total tag evidence is capped
+    at two so channel-wide/SEO tags cannot overwhelm a clear title topic. Each
+    keyword contributes once per source, with nested matches counted only as
+    the longer phrase. Configured weights distinguish topic signals from broad
+    context such as 'ai'. Equal best scores abstain to the default category.
+    Collection labels and historical assignments are never classifier inputs.
+    """
     categories_path = Path("config/categories.yaml")
     if not categories_path.exists():
         return {"id": "miscellaneous", "name": "📦 Miscellaneous"}
@@ -669,16 +691,26 @@ def get_category(title: str, tags: List[str]) -> Dict[str, str]:
     with open(categories_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     
-    text_to_check = (title + " " + " ".join(tags)).lower()
+    title_fields = [_category_text(title)]
+    tag_fields = [_category_text(tag) for tag in tags]
+    default = config.get("default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"})
+    best_score = 0.0
+    winners = []
     for cat in config.get("categories", []):
-        for keyword in cat.get("keywords", []):
-            # Match complete words/phrases so short keywords such as "doe" do not
-            # classify ordinary prose containing "does" or "doesn't".  Category
-            # order remains authoritative: the first matching category wins.
-            if re.search(rf"\b{re.escape(keyword.lower())}\b", text_to_check):
-                return {"id": cat["id"], "name": cat["name"]}
-                
-    return config.get("default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"})
+        configured = cat.get("keywords", {})
+        # Lists remain supported for existing/custom category configurations.
+        if isinstance(configured, list):
+            configured = dict.fromkeys(configured, 1.0)
+        keywords = {_category_text(word): weight for word, weight in configured.items()}
+        score = (3 * _category_evidence(title_fields, keywords)
+                 + min(2, _category_evidence(tag_fields, keywords)))
+        if score > best_score:
+            best_score, winners = score, [cat]
+        elif score == best_score:
+            winners.append(cat)
+    if best_score > 0 and len(winners) == 1:
+        return {"id": winners[0]["id"], "name": winners[0]["name"]}
+    return default
 
 def update_index(entry_data: Dict[str, Any]) -> bool:
     """

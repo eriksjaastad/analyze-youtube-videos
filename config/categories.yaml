@@ -1,42 +1,110 @@
+# Topic evidence, not routing precedence: category order only controls index display.
+# Most signals weigh 1; specific phrases weigh 2-4; broad context weighs 0.25/0.5.
+# Title evidence is weighted 3x and total tag evidence is capped at 2. Repeated
+# terms and nested phrases do not accumulate. Exact ties use the default.
+# Add topics/signals here as coverage grows; never reorder to resolve collisions.
 categories:
-  # Ordered BEFORE ai_automation deliberately. get_category() returns on the FIRST matching
-  # category in list order, and ai_automation's "ai" keyword otherwise swallows any self-help
-  # video with AI in the title — which is exactly how the Seth Godin episode ("...Before AI
-  # Makes The Choice For You") first landed under "🤖 AI & Automation".
   - id: self_improvement
     name: "🧭 Self-Help & Getting Unstuck"
-    keywords: ["self-help", "procrastination", "quitting", "mindset", "burnout", "motivation"]
-  # Also ordered BEFORE ai_automation, for the same reason. Geopolitics videos routinely carry
-  # tags like "AI drone warfare", which ai_automation's bare "ai" keyword swallows — that is how
-  # the ex-Stratfor panel first landed under "🤖 AI & Automation".
-  # Keyword choices are still deliberately specific: broad terms can match unrelated
-  # standalone words, and "world order" matches "New World Order", which is stock
-  # phrasing in the cults/politics_power genre. This category is ordered ahead of
-  # politics_power, so that keyword would win there. The category NAME may say
-  # "World Order"; only configured keywords are matched.
+    keywords: {self-help: 2, procrastination: 1, quitting: 1, mindset: 1, burnout: 1, motivation: 1}
   - id: geopolitics
     name: "🌍 Geopolitics & World Order"
-    keywords: ["geopolitics", "geopolitical", "deglobalization", "taiwan",
-               "sanctions", "great power", "demographic collapse"]
+    keywords:
+      geopolitics: 2
+      geopolitical: 2
+      deglobalization: 1
+      taiwan: 1
+      sanctions: 1
+      great power: 2
+      demographic collapse: 2
+      stratfor: 2
+      peter zeihan: 2
+      war machine: 2
+      strait of hormuz: 2
   - id: agentic_workflows
     name: "🚀 Agentic Workflows"
-    keywords: ["agentic", "doe", "orchestration", "vibe"]
+    keywords: {agentic: 2, doe: 1, orchestration: 1, orchestrating: 1, vibe: 1,
+               ai workflows: 2, ai infrastructure: 2, agent sdk: 2, ai agents: 1,
+               antigravity: 1, n8n: 1, hermes agent: 2, openclaw: 1,
+               agentic coding: 4}
   - id: ai_automation
     name: "🤖 AI & Automation"
-    keywords: ["ai", "automation", "agent", "llm"]
+    # AI often describes the tool used, not the subject being taught.
+    keywords: {ai: 0.25, automation: 0.5, automations: 0.5, agent: 0.5,
+               llm: 1, llms: 1, artificial intelligence: 1, claude: 0.5,
+               chatgpt: 1, gemini: 0.5, grok: 0.5, jev: 2,
+               language model: 2, language models: 2, fine tuning: 2, token limit: 2}
+  - id: animation_video
+    name: "🎬 Animation & Video Production"
+    keywords:
+      animation: 1
+      animations: 1
+      aianimation: 1
+      animated: 1
+      animated character: 2
+      animated characters: 2
+      movie: 1
+      movies: 1
+      film: 1
+      filmmaking: 1
+      video generator: 2
+      video generators: 2
+      generative video: 2
+      ai video: 1
+      ai videos: 1
+      lip sync: 2
+      lipsync: 2
+      lipsyncing: 2
+      cartoon: 1
+      special effects: 2
+      sora: 1
+      higgsfield: 1
+      heygen: 1
+      pixar: 1
+  - id: image_design
+    name: "🎨 Images & Character Design"
+    keywords: {midjourney: 1, nano banana: 2, character: 1, characters: 1,
+               avatar: 1, avatars: 1, aiavatar: 1, aicharacter: 1,
+               ai image: 2, images: 0.5, outfits: 1, art: 1,
+               photoshop: 1, photography: 1, color grading: 2, camera raw: 2}
+  - id: audio_music
+    name: "🎵 Audio, Voice & Music"
+    keywords: {music: 1, song: 1, songs: 1, k-pop: 1, kpop: 1,
+               text to speech: 2, voice: 1, voice overs: 2, voiceover: 1,
+               voiceovers: 1, elevenlabs: 1, 11labs: 1, podcast: 0.25}
   - id: health_diet
     name: "🥗 Health & Diet"
-    keywords: ["diet", "fat", "health", "nutrition", "workout"]
+    keywords: {diet: 1, fat: 1, health: 1, nutrition: 1, workout: 1,
+               weight loss: 2, lose weight: 2, sleep: 1, fitness: 1}
+  - id: finance
+    name: "💰 Finance, Investing & Trading"
+    keywords: {finance: 1, financial: 1, investing: 1, investment: 1,
+               trading: 1, trader: 1, trade: 1, wall street: 2, debt: 1,
+               risk management: 2, stocks: 1, taxes: 1, gold: 1, bitcoin: 1,
+               market crash: 2, valuation: 1, portfolio: 1}
   - id: content_strategy
     name: "💡 Content Strategy & Business"
-    keywords: ["business", "strategy", "content", "marketing", "youtube"]
+    # Bare 'strategy' and 'youtube' are not topic evidence (trading/platform tags).
+    keywords: {business: 1, content strategy: 2, content creation: 2,
+               marketing: 1, monetizing: 2, monetization: 2, creator: 1,
+               creators: 1, channel: 0.5, influencer: 1, aiinfluencer: 1,
+               saas: 1, commercial: 1}
   - id: development
     name: "💻 Development & Engineering"
-    keywords: ["python", "code", "engineering", "software", "git"]
+    keywords: {python: 1, code: 1, coding: 1, engineering: 1, software: 1,
+               git: 1, claude code: 2, developer: 1, developers: 1,
+               typescript: 1, javascript: 1, react: 1}
   - id: politics_power
     name: "🏛️ Politics & Power"
-    # No bare "cult" — reserve the keyword for explicit cult-related terms.
-    keywords: ["politics", "political", "authoritarian", "religion", "dominionism", "propaganda"]
+    keywords: {politics: 1, political: 1, authoritarian: 1, religion: 1,
+               dominionism: 1, propaganda: 1, trump: 1, midterm: 1,
+               conservatives: 1, historical events: 2}
+  - id: science_environment
+    name: "🔬 Science, Energy & Environment"
+    keywords: {science: 1, astronomy: 1, observatory: 1, telescope: 1,
+               vera rubin: 2, nuclear: 1, thorium: 1, reactor: 1,
+               fuel: 1, climate: 1, ecology: 1, restoration: 1,
+               ranch: 1, farm: 1, agriculture: 1}
 default_category:
   id: miscellaneous
   name: "📦 Miscellaneous"
