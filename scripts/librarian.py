@@ -219,7 +219,8 @@ def supported_platform(url: str) -> Optional[str]:
     if not url or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
         return None
     try:
-        parsed = urlsplit(url if "://" in url else "https://" + url)
+        has_scheme = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", url)
+        parsed = urlsplit(url if has_scheme else "https://" + url)
     except ValueError:
         return None
     hosts = {"youtube.com": "youtube", "youtu.be": "youtube",
