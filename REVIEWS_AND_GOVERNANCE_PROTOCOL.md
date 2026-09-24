@@ -1,4 +1,4 @@
-<!-- GENERATED — do not edit. Source: project-scaffolding/REVIEWS_AND_GOVERNANCE_PROTOCOL.md. Re-run: scripts/sync-governance-docs.sh -->
+<!-- GENERATED — do not edit. Source: project-tracker/REVIEWS_AND_GOVERNANCE_PROTOCOL.md. Re-run: scripts/sync-governance-docs.sh -->
 # Ecosystem Governance & Review Protocol
 
 version: 2026.03.23
