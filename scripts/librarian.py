@@ -215,6 +215,8 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
+            if is_rate_limited(result.stderr or ""):
+                raise RateLimitedError(f"YouTube rate-limited the audio download for {url}")
             logger.error(f"Audio download failed: {result.stderr}")
             return None
 
@@ -224,6 +226,8 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
             logger.error(f"Audio file not found at {audio_path}")
             return None
 
+    except RateLimitedError:
+        raise
     except subprocess.TimeoutExpired:
         logger.error("Audio download timed out after 300 seconds")
         return None

@@ -5,6 +5,7 @@ network or invoke a real yt-dlp binary.
 """
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -60,6 +61,16 @@ def test_run_with_retry_still_retries_non_rate_limited_failures(mock_run, mock_s
     assert result.returncode == 1
 
 
+# --- download_audio rate limiting ---------------------------------------------
+
+@patch("subprocess.run")
+def test_download_audio_raises_rate_limited_error_on_429_stderr(mock_run):
+    mock_run.return_value = _completed(1, stderr="ERROR: HTTP Error 429: Too Many Requests")
+
+    with pytest.raises(librarian.RateLimitedError):
+        librarian.download_audio("https://youtu.be/v", Path("/tmp/fake"))
+
+
 # --- get_video_data rate limiting --------------------------------------------
 
 @patch("scripts.librarian.run_with_retry")
@@ -88,6 +99,29 @@ def test_get_video_data_raises_on_subtitle_429_and_never_downloads_audio(
         librarian.get_video_data("https://youtube.com/watch?v=v")
 
     mock_download_audio.assert_not_called()
+
+
+@patch("scripts.librarian.transcribe_with_whisper")
+@patch("subprocess.run")
+@patch("scripts.librarian.run_with_retry")
+@patch("tempfile.TemporaryDirectory")
+@patch("os.listdir")
+def test_get_video_data_whisper_fallback_audio_429_propagates(
+    mock_listdir, mock_tempdir, mock_run, mock_subprocess_run, mock_transcribe
+):
+    mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
+    mock_listdir.return_value = []
+    mock_run.side_effect = [
+        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v"})),
+        _completed(0),  # subtitle call succeeds but writes no subtitle files
+    ]
+    mock_subprocess_run.return_value = _completed(1, stderr="HTTP Error 429: Too Many Requests")
+
+    with pytest.raises(librarian.RateLimitedError):
+        librarian.get_video_data("https://youtube.com/watch?v=v")
+
+    mock_subprocess_run.assert_called_once()
+    mock_transcribe.assert_not_called()
 
 
 @patch("scripts.librarian.run_with_retry")
@@ -296,6 +330,19 @@ def test_batch_stops_immediately_on_rate_limited_video(tmp_path, monkeypatch):
     assert exc_info.value.code == 1
     assert process.call_count == 2
     assert process.call_args_list[1].args[0] == "https://youtu.be/b"
+
+
+def test_main_single_video_rate_limited_exits_1(monkeypatch):
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    process = MagicMock(side_effect=librarian.RateLimitedError("HTTP Error 429"))
+    monkeypatch.setattr(librarian, "process_single_video", process)
+    monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        librarian.main()
+
+    assert exc_info.value.code == 1
+    assert process.call_count == 1
 
 
 def test_data_file_requires_analysis_file(monkeypatch):
