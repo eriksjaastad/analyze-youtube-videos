@@ -1,3 +1,69 @@
+"""The Librarian: fetch YouTube, TikTok, and Instagram transcripts and file analysis reports.
+
+Modes
+-----
+fetch-only (default)
+    Run with just a url. Fetches metadata + transcript from the platform,
+    adds research_targets, and prints JSON (transcript, metadata, and
+    research_targets) to stdout. Nothing is written to the library.
+
+    A channel on config/flagged_channels.yaml adds a "flag" object and a
+    warning; it never blocks.
+
+save (--analysis-file)
+    Loads a pre-written markdown analysis, applies config/replacements.yaml,
+    runs the claim-source audit (warns on empty Source cells, never blocks),
+    writes the report to library/, updates library/index.yaml, re-renders
+    library/00_Index_Library.md, and moves the URL to Analyzed in
+    VIDEOS_QUEUE.md. Requires config/categories.yaml. NOTE: the save path
+    re-fetches metadata + transcript from the platform first, so it needs
+    network access and can hit rate limits.
+
+batch (--batch-profile)
+    Processes every video on a YouTube or TikTok profile, skipping URLs
+    already in library/index.yaml. Instagram profile batches are rejected.
+    --limit caps the number of videos and --delay sets the seconds between
+    videos. Any batch failure exits 1.
+
+Supported platforms
+-------------------
+YouTube (youtube.com, youtu.be), TikTok (tiktok.com), and Instagram
+(instagram.com) posts/reels.
+
+CLI flags
+---------
+url
+    YouTube, TikTok, or Instagram URL to process.
+--batch-profile
+    Process all videos from a TikTok/YouTube profile URL.
+--limit
+    Limit number of videos to process in batch mode.
+--delay
+    Delay in seconds between videos in batch mode (default: 45).
+--dry-run
+    Don't write files, just show output.
+--analysis-file
+    Path to a markdown file containing pre-generated analysis to save.
+--no-whisper
+    Disable Whisper fallback for videos without transcripts.
+--subdir
+    File the report under library/<subdir>/ instead of the library root.
+
+Examples
+--------
+    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..."
+    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
+    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
+    uv run --with pyyaml scripts/librarian.py --batch-profile "https://www.tiktok.com/@creator" --limit 10
+
+Exit codes
+----------
+0  Success (single-video success, or a batch with no failed videos).
+1  Failure: single-video processing failed, no videos found on a profile, or
+   at least one batch video failed.
+2  Argparse usage error: missing url or --batch-profile, unsupported URL/host,
+   Instagram profile batch, unknown flag, or invalid flag value.
+"""
 import os
 import sys
 import argparse
@@ -1176,8 +1242,12 @@ def process_single_video(url: str, args) -> bool:
     return True
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="The Librarian: Extract video transcripts from YouTube, TikTok, and Instagram.")
+def build_parser() -> argparse.ArgumentParser:
+    """Build the librarian CLI parser. The module docstring is the description."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("url", nargs="?", help="YouTube, TikTok, or Instagram URL to process")
     parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
     parser.add_argument("--limit", type=int, help="Limit number of videos to process in batch mode")
@@ -1186,7 +1256,11 @@ def main() -> None:
     parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
     parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
     parser.add_argument("--subdir", help="File the report under library/<subdir>/ instead of the library root (topic collection)")
+    return parser
 
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
 
     url = args.batch_profile or args.url
