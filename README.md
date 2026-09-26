@@ -16,18 +16,17 @@ That's it. No external LLMs, no API keys, no extra steps.
 ### Quick Reference
 
 ```bash
-# Fetch transcript data (returns JSON)
-uv run scripts/librarian.py "https://youtube.com/watch?v=..."
+# Fetch transcript data (prints JSON to stdout)
+uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..."
 
 # Save a pre-written analysis to the library
-uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
+uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
 
-# Save into a topic collection (library/<subdir>/)
-uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
-
-# Batch fetch from a profile (TikTok or YouTube)
-uv run scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limit 10
+# Batch fetch from a profile (YouTube/TikTok only)
+uv run --with pyyaml scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limit 10
 ```
+
+Full flag reference lives in `uv run --with pyyaml scripts/librarian.py --help`.
 
 ### Collections
 
@@ -61,8 +60,9 @@ per video.
 | `lance-breitstein/` | Single-**source** collection: Lance Breitstein / TheOneLanceB. Credibility is settled, so the job is cumulative framework extraction across a run of videos. Adds a standing third-party-numbers check (his documented failure mode), a "what changed in the pattern" section, and a program-relevant extract for the `trading-copilot` project. |
 
 ### Supported Platforms
-- YouTube (youtube.com, youtu.be)
-- TikTok (tiktok.com)
+
+YouTube, TikTok, and Instagram (posts/reels) are supported; the authoritative
+list and full flag reference live in `uv run --with pyyaml scripts/librarian.py --help`.
 
 ### Analysis Modes
 - **Standard analysis** — video overview, key concepts, actionable takeaways, critical assessment
