@@ -4,8 +4,11 @@ Modes
 -----
 fetch-only (default)
     Run with just a url. Fetches metadata + transcript from the platform,
-    adds research_targets, and prints JSON (transcript, metadata, and
-    research_targets) to stdout. Nothing is written to the library.
+    adds research_targets, prints JSON (transcript, metadata, and
+    research_targets) to stdout, and caches that same JSON under
+    data/fetch_cache/<platform>-<video_id>.json so a later save can file
+    the report without hitting the network again. Nothing is written to
+    the library.
 
     A channel on config/flagged_channels.yaml adds a "flag" object and a
     warning; it never blocks.
@@ -15,15 +18,17 @@ save (--analysis-file)
     runs the claim-source audit (warns on empty Source cells, never blocks),
     writes the report to library/, updates library/index.yaml, re-renders
     library/00_Index_Library.md, and moves the URL to Analyzed in
-    VIDEOS_QUEUE.md. Requires config/categories.yaml. NOTE: the save path
-    re-fetches metadata + transcript from the platform first, so it needs
-    network access and can hit rate limits.
+    VIDEOS_QUEUE.md. Requires config/categories.yaml. Video data comes from
+    --data-file when given, otherwise from a fetch cache file whose url
+    matches, otherwise from a metadata-only fetch; save never downloads
+    subtitles or audio.
 
 batch (--batch-profile)
     Processes every video on a YouTube or TikTok profile, skipping URLs
     already in library/index.yaml. Instagram profile batches are rejected.
     --limit caps the number of videos and --delay sets the seconds between
-    videos. Any batch failure exits 1.
+    videos. A YouTube HTTP 429 rate limit stops the batch immediately; any
+    batch failure exits 1.
 
 Supported platforms
 -------------------
@@ -44,6 +49,9 @@ url
     Don't write files, just show output.
 --analysis-file
     Path to a markdown file containing pre-generated analysis to save.
+--data-file
+    Path to JSON previously printed by fetch mode to use as video data in
+    save mode. Requires --analysis-file.
 --no-whisper
     Disable Whisper fallback for videos without transcripts.
 --subdir
@@ -54,6 +62,7 @@ Examples
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..."
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
+    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --data-file data/fetch_cache/youtube-abc123.json
     uv run --with pyyaml scripts/librarian.py --batch-profile "https://www.tiktok.com/@creator" --limit 10
 
 Exit codes
@@ -82,6 +91,22 @@ from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
 from scripts.config import LIBRARY_DIR, TEMP_DIR, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
 
+# data/ is gitignored; the fetch cache is a local convenience, not library content.
+FETCH_CACHE_DIR = Path(os.getenv("FETCH_CACHE_DIR", "data/fetch_cache"))
+
+
+class RateLimitedError(RuntimeError):
+    """YouTube answered HTTP 429; retrying would only make the rate limit worse."""
+
+
+def is_rate_limited(stderr: str) -> bool:
+    """True when stderr reports an HTTP 429 rate limit (case-insensitive)."""
+    if not stderr:
+        return False
+    lowered = stderr.lower()
+    return "http error 429" in lowered or "too many requests" in lowered
+
+
 def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_delay: float = 2.0) -> Optional[subprocess.CompletedProcess]:
     """
     Runs a subprocess command with exponential backoff retry logic.
@@ -103,7 +128,11 @@ def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_dela
             if result.returncode == 0:
                 return result
 
-            # Non-zero return code - retry with backoff
+            # Non-zero return code - fail fast on rate limits, retry others
+            if is_rate_limited(result.stderr or ""):
+                logger.error("YouTube rate limit (HTTP 429) — not retrying; wait before fetching again")
+                return result
+
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
                 logger.warning(f"Command failed (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
@@ -186,6 +215,8 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
+            if is_rate_limited(result.stderr or ""):
+                raise RateLimitedError(f"YouTube rate-limited the audio download for {url}")
             logger.error(f"Audio download failed: {result.stderr}")
             return None
 
@@ -195,6 +226,8 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
             logger.error(f"Audio file not found at {audio_path}")
             return None
 
+    except RateLimitedError:
+        raise
     except subprocess.TimeoutExpired:
         logger.error("Audio download timed out after 300 seconds")
         return None
@@ -316,11 +349,14 @@ def _instagram_handle(metadata: Dict[str, Any]) -> str:
     return ""
 
 
-def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict[str, Any]]:
+def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: bool = False) -> Optional[Dict[str, Any]]:
     """
     Uses yt-dlp to fetch video metadata and SRT transcript.
     Prioritizes manual subtitles over auto-generated ones.
     Uses tempfile.TemporaryDirectory for safe, automatic cleanup.
+
+    With metadata_only=True, only the --print-json metadata call runs and the
+    returned dict carries an empty transcript — no subtitle, audio, or Whisper.
     """
     with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="transcript_") as temp_dir:
         unique_temp = Path(temp_dir)
@@ -336,61 +372,66 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
             ]
             result = run_with_retry(cmd_info, timeout=60)
             if result is None or result.returncode != 0:
+                if result is not None and is_rate_limited(result.stderr or ""):
+                    raise RateLimitedError(f"YouTube rate-limited the metadata request for {url}")
                 error_msg = result.stderr if result else "Command failed after retries"
                 logger.error(f"Error fetching metadata: {error_msg}")
                 return None
 
             metadata = json.loads(result.stdout)
-            
-            logger.info("[*] Fetching manual and auto-subtitles...")
-            sub_path_base = str(unique_temp / "transcript")
-            cmd_subs = [
-                "yt-dlp",
-                "--skip-download",
-                "--write-subs",
-                "--write-auto-subs",
-                "--sub-lang", "en,en-US,en-GB,eng,eng-US,eng-GB",
-                "--sub-format", "srt/vtt/best",
-                "--output", sub_path_base,
-                url
-            ]
-            sub_result = run_with_retry(cmd_subs, timeout=120)
-            if sub_result is None or sub_result.returncode != 0:
-                error_msg = sub_result.stderr if sub_result else "Command failed after retries"
-                logger.warning(f"Subtitle fetch command failed for {url}.")
-                logger.debug(f"Stderr: {error_msg}")
-            
-            srt_files = [f for f in os.listdir(unique_temp) if f.endswith(('.srt', '.vtt'))]
+
             transcript = ""
-            target_file = select_subtitle(srt_files, "transcript")
+            if not metadata_only:
+                logger.info("[*] Fetching manual and auto-subtitles...")
+                sub_path_base = str(unique_temp / "transcript")
+                cmd_subs = [
+                    "yt-dlp",
+                    "--skip-download",
+                    "--write-subs",
+                    "--write-auto-subs",
+                    "--sub-lang", "en,en-US,en-GB,eng,eng-US,eng-GB",
+                    "--sub-format", "srt/vtt/best",
+                    "--output", sub_path_base,
+                    url
+                ]
+                sub_result = run_with_retry(cmd_subs, timeout=120)
+                if sub_result is None or sub_result.returncode != 0:
+                    if sub_result is not None and is_rate_limited(sub_result.stderr or ""):
+                        raise RateLimitedError(f"YouTube rate-limited the subtitle request for {url}")
+                    error_msg = sub_result.stderr if sub_result else "Command failed after retries"
+                    logger.warning(f"Subtitle fetch command failed for {url}.")
+                    logger.debug(f"Stderr: {error_msg}")
 
-            if target_file:
-                target_path = unique_temp / target_file
-                with open(target_path, 'r', encoding='utf-8') as f:
-                    srt_content = f.read()
-                    transcript = clean_srt(srt_content)
-            else:
-                logger.warning("No SRT transcript found.")
+                srt_files = [f for f in os.listdir(unique_temp) if f.endswith(('.srt', '.vtt'))]
+                target_file = select_subtitle(srt_files, "transcript")
 
-                # Try Whisper fallback if enabled
-                if use_whisper_fallback:
-                    logger.info("[*] Attempting Whisper fallback...")
-                    audio_path = download_audio(url, unique_temp)
-                    if audio_path:
-                        whisper_transcript = transcribe_with_whisper(audio_path)
-                        if whisper_transcript:
-                            transcript = whisper_transcript
-                            logger.info("[+] Using Whisper-generated transcript")
+                if target_file:
+                    target_path = unique_temp / target_file
+                    with open(target_path, 'r', encoding='utf-8') as f:
+                        srt_content = f.read()
+                        transcript = clean_srt(srt_content)
+                else:
+                    logger.warning("No SRT transcript found.")
+
+                    # Try Whisper fallback if enabled
+                    if use_whisper_fallback:
+                        logger.info("[*] Attempting Whisper fallback...")
+                        audio_path = download_audio(url, unique_temp)
+                        if audio_path:
+                            whisper_transcript = transcribe_with_whisper(audio_path)
+                            if whisper_transcript:
+                                transcript = whisper_transcript
+                                logger.info("[+] Using Whisper-generated transcript")
+                            else:
+                                logger.error("Whisper transcription failed")
                         else:
-                            logger.error("Whisper transcription failed")
-                    else:
-                        logger.error("Audio download failed")
+                            logger.error("Audio download failed")
 
-                # If both SRT and Whisper failed, return None
-                if not transcript:
-                    logger.error("No transcript available (SRT and Whisper both failed)")
-                    return None
-                
+                    # If both SRT and Whisper failed, return None
+                    if not transcript:
+                        logger.error("No transcript available (SRT and Whisper both failed)")
+                        return None
+
             # Extract chapters if available
             chapters = extract_chapters(metadata)
 
@@ -436,12 +477,95 @@ def get_video_data(url: str, use_whisper_fallback: bool = True) -> Optional[Dict
                 "chapters": chapters,
                 "platform": platform
             }
+        except RateLimitedError:
+            raise
         except subprocess.TimeoutExpired as e:
             logger.error(f"Subprocess timed out: {e}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error in get_video_data: {e}")
             return None
+
+
+def _fill_save_data_defaults(data: Dict[str, Any]) -> None:
+    """Fill optional save fields so cached/fetched JSON is always saveable."""
+    data.setdefault("view_count", 0)
+    data.setdefault("like_count", 0)
+    data.setdefault("duration_string", "0:00")
+    data.setdefault("tags", [])
+    data.setdefault("chapters", [])
+
+
+def _load_data_file(url: str, data_file: str) -> Optional[Dict[str, Any]]:
+    """Load a --data-file JSON object and validate it against the CLI url."""
+    path = Path(data_file)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error(f"Could not read --data-file {data_file}: {e}")
+        return None
+    if not isinstance(data, dict):
+        logger.error(f"--data-file {data_file} must contain a JSON object")
+        return None
+    missing = [key for key in ("title", "channel", "url", "video_id") if key not in data]
+    if missing:
+        logger.error(f"--data-file {data_file} is missing required key(s): {', '.join(missing)}")
+        return None
+    if data["url"] != url:
+        logger.error(f"--data-file url {data['url']!r} does not match the CLI url {url!r}")
+        return None
+    _fill_save_data_defaults(data)
+    return data
+
+
+def _find_cache_for_url(url: str) -> Optional[Dict[str, Any]]:
+    """Return cached fetch JSON whose url matches, or None. Unreadable files warn."""
+    if not FETCH_CACHE_DIR.is_dir():
+        return None
+    for cache_path in FETCH_CACHE_DIR.glob("*.json"):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"Ignoring unreadable fetch cache file {cache_path}: {e}")
+            continue
+        if isinstance(data, dict) and data.get("url") == url:
+            _fill_save_data_defaults(data)
+            logger.info(f"[+] Using fetch cache {cache_path}")
+            return data
+    return None
+
+
+def _write_fetch_cache(data: Dict[str, Any], payload: str) -> None:
+    """Write the printed fetch JSON to the cache. A failure warns, never fails the fetch."""
+    try:
+        FETCH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        platform = data.get("platform") or "unknown"
+        video_id = data.get("video_id") or "unknown"
+        cache_path = FETCH_CACHE_DIR / f"{platform}-{safe_slug(video_id)}.json"
+        atomic_write(cache_path, payload)
+        logger.info(f"[+] Cached fetch JSON at {cache_path}")
+    except OSError as e:
+        logger.warning(f"Could not write fetch cache: {e}")
+
+
+def _load_save_data(url: str, args) -> Optional[Dict[str, Any]]:
+    """Resolve video data for save mode without subtitles or audio.
+
+    Order: --data-file, then a fetch cache file matching the URL, then a
+    metadata-only fetch.
+    """
+    data_file = getattr(args, "data_file", None)
+    if isinstance(data_file, str) and data_file:
+        return _load_data_file(url, data_file)
+    data = _find_cache_for_url(url)
+    if data is None:
+        data = get_video_data(url, use_whisper_fallback=False, metadata_only=True)
+    if isinstance(data, dict):
+        _fill_save_data_defaults(data)
+    return data
+
 
 def build_tutorial_prompt(data: Dict[str, Any]) -> str:
     """Build a tutorial-extraction prompt for short-form or long-form video content."""
@@ -1153,7 +1277,10 @@ def process_single_video(url: str, args) -> bool:
     In save mode (--analysis-file), saves a pre-generated analysis to the library.
     Returns True on success, False on failure.
     """
-    data = get_video_data(url, use_whisper_fallback=not args.no_whisper)
+    if args.analysis_file:
+        data = _load_save_data(url, args)
+    else:
+        data = get_video_data(url, use_whisper_fallback=not args.no_whisper)
     if not data:
         logger.error(f"Failed to get video data for: {url}")
         return False
@@ -1175,7 +1302,10 @@ def process_single_video(url: str, args) -> bool:
         data["research_targets"] = extract_research_targets(data)
         # Fires here, on the fetch that precedes grading — not on the save, which is too late.
         emit_fact_check_protocol_reminder()
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        payload = json.dumps(data, indent=2, ensure_ascii=False)
+        print(payload)
+        # Cache the exact printed JSON so save mode can file the report offline.
+        _write_fetch_cache(data, payload)
         return True
 
     # Load pre-generated analysis from file
@@ -1254,6 +1384,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delay", type=int, default=45, help="Delay in seconds between videos in batch mode (default: 45)")
     parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show output")
     parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
+    parser.add_argument("--data-file", help="Path to JSON previously printed by fetch mode to use as video data (requires --analysis-file)")
     parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")
     parser.add_argument("--subdir", help="File the report under library/<subdir>/ instead of the library root (topic collection)")
     return parser
@@ -1262,6 +1393,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.data_file and not args.analysis_file:
+        parser.error("--data-file requires --analysis-file")
 
     url = args.batch_profile or args.url
     if not url:
@@ -1309,7 +1443,14 @@ def main() -> None:
             logger.info(f"[{i+1}/{total}] Processing: {url}")
             logger.info(f"{'='*60}")
 
-            if process_single_video(url, args):
+            try:
+                ok = process_single_video(url, args)
+            except RateLimitedError as e:
+                logger.error(f"Rate limited on {url}: {e}")
+                failed += 1
+                break
+
+            if ok:
                 succeeded += 1
             else:
                 failed += 1
@@ -1326,7 +1467,13 @@ def main() -> None:
             sys.exit(1)
         return
 
-    if not process_single_video(url, args):
+    try:
+        ok = process_single_video(url, args)
+    except RateLimitedError as e:
+        logger.error(f"Rate limited on {url}: {e}")
+        sys.exit(1)
+
+    if not ok:
         logger.error("CRITICAL ERROR: Processing failed.")
         sys.exit(1)
 
