@@ -10,9 +10,6 @@ fetch-only (default)
     the report without hitting the network again. Nothing is written to
     the library.
 
-    A channel on config/flagged_channels.yaml adds a "flag" object and a
-    warning; it never blocks.
-
 save (--analysis-file)
     Loads a pre-written markdown analysis, applies config/replacements.yaml,
     runs the claim-source audit (warns on empty Source cells, never blocks),
@@ -22,6 +19,10 @@ save (--analysis-file)
     --data-file when given, otherwise from a fetch cache file whose url
     matches, otherwise from a metadata-only fetch; save never downloads
     subtitles or audio.
+
+    A channel on config/flagged_channels.yaml emits a warning in both fetch
+    and save modes; the "flag" object only appears in the fetch JSON. It
+    never blocks.
 
 batch (--batch-profile)
     Processes every video on a YouTube or TikTok profile, skipping URLs
@@ -46,7 +47,9 @@ url
 --delay
     Delay in seconds between videos in batch mode (default: 45).
 --dry-run
-    Don't write files, just show output.
+    Save mode only: don't write the report or update the index and queue,
+    just show the report. Fetch mode ignores it and still writes
+    data/fetch_cache.
 --analysis-file
     Path to a markdown file containing pre-generated analysis to save.
 --data-file
@@ -64,6 +67,13 @@ Examples
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --data-file data/fetch_cache/youtube-abc123.json
     uv run --with pyyaml scripts/librarian.py --batch-profile "https://www.tiktok.com/@creator" --limit 10
+
+Dependencies
+------------
+    The invocation prefix is `uv run --with pyyaml`. The Whisper fallback
+    (on by default, and always needed for Instagram, which has no captions)
+    also needs `--with faster-whisper==1.2.1`, else pass --no-whisper.
+    yt-dlp is invoked as a subprocess from PATH.
 
 Exit codes
 ----------

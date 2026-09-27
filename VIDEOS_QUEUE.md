@@ -9,9 +9,9 @@
 ## How to Use This File
 
 1. **Add video URL** to "To Analyze" section below
-2. **Run the Librarian:** `uv run scripts/librarian.py [URL]`
-3. **AI will analyze** and save professional report to `library/`
-4. **Video moves** to "Analyzed" section automatically
+2. **Fetch metadata + transcript:** `uv run --with pyyaml scripts/librarian.py [URL]` prints JSON and caches it under `data/fetch_cache/`
+3. **Claude writes the analysis** from that JSON (the librarian never analyzes)
+4. **Save it:** `uv run --with pyyaml scripts/librarian.py [URL] --analysis-file <report.md>` writes the report to `library/`, updates the index, and moves the URL to "Analyzed"
 
 ---
 
@@ -150,24 +150,24 @@ https://youtu.be/KYe2IToDzl4 - **Prof Steve Keen, "You Won't Believe Who's Actua
 ### Running the Librarian
 
 ```bash
-# Analyze a single video
-uv run scripts/librarian.py https://youtu.be/VIDEO_ID
+# Fetch metadata + transcript as JSON (also cached under data/fetch_cache/)
+uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID
 
-# Dry run (preview analysis without saving)
-uv run scripts/librarian.py --dry-run https://youtu.be/VIDEO_ID
+# Save a report written by Claude (moves the URL to "Analyzed")
+uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md
+
+# Dry run: preview the save without writing the report or updating the index/queue
+uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md --dry-run
 ```
 
 ### What Gets Created
 
-For each video, the Librarian generates:
-- Professional analysis document in `library/`
-- Structured sections: Overview, Key Concepts, Actionable Takeaways, Critical Assessment
-- No transcript dump - just synthesized insights
+- **Fetch** prints metadata + transcript JSON to stdout and caches it under `data/fetch_cache/`
+- **Save** writes the report to `library/`, updates `library/index.yaml` and `library/00_Index_Library.md`, and moves the URL to "Analyzed"
+- The librarian never analyzes — Claude writes the analysis
 
 ### Related Files
-- **Analysis methodology:** `Documents/core/YouTube_Analysis_Methodology.md`
 - **Librarian script:** `scripts/librarian.py`
-- **Project status:** `TODO.md`
 
 ---
 
