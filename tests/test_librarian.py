@@ -979,3 +979,82 @@ def test_instagram_does_not_invent_handle_from_name_id_or_route(url, caplog):
     assert data["uploader_id"] == ""
     assert data["channel_id"] == "existing-id"
     assert "handle unavailable" in caplog.text
+
+
+# --- flagged-channel warning is wired into save mode ------------------------------
+# process_single_video() runs check_flagged_channel() + emit_flag_warning() before
+# branching on mode, so save (--analysis-file) must warn too, not just fetch.
+
+@patch("scripts.librarian.get_video_data")
+@patch("scripts.librarian.save_to_library")
+@patch("scripts.librarian.update_index", return_value=True)
+@patch("scripts.librarian.update_queue")
+def test_save_mode_emits_flag_warning_for_flagged_channel(
+    mock_queue, mock_index, mock_save, mock_get, flag_config, tmp_path, monkeypatch, caplog
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "categories.yaml").write_text(
+        "categories: []\n"
+        "default_category:\n"
+        "  id: miscellaneous\n"
+        "  name: Miscellaneous\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(librarian, "FETCH_CACHE_DIR", tmp_path / "data" / "fetch_cache")
+
+    analysis = tmp_path / "analysis.md"
+    analysis.write_text("Workflow only, no claim table.", encoding="utf-8")
+
+    data = {
+        "title": "Flagged interview",
+        "channel": "The Diary Of A CEO",
+        "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw",
+        "uploader_id": "@TheDiaryOfACEO",
+        "date": "20260623",
+        "url": "https://youtu.be/abc123",
+        "video_id": "abc123",
+        "view_count": 0,
+        "like_count": 0,
+        "duration_string": "1:00",
+        "tags": [],
+        "chapters": [],
+        "transcript": "",
+    }
+    mock_get.return_value = dict(data)
+    mock_save.return_value = tmp_path / "report.md"
+    args = MagicMock(
+        analysis_file=str(analysis), no_whisper=True, subdir=None,
+        dry_run=False, data_file=None,
+    )
+
+    with caplog.at_level("WARNING", logger=librarian.logger.name):
+        assert librarian.process_single_video("https://youtu.be/abc123", args) is True
+
+    assert "[!!] FLAGGED CHANNEL" in caplog.text
+    assert "The Diary Of A CEO" in caplog.text
+
+
+# --- fetch mode ignores --dry-run for the cache -----------------------------------
+# The fetch JSON is the only input a later offline save has, so pin that --dry-run
+# (a save-mode preview) does not suppress the fetch cache write.
+
+@patch("scripts.librarian.get_video_data")
+def test_fetch_mode_dry_run_still_writes_fetch_cache(
+    mock_get, tmp_path, monkeypatch, capsys
+):
+    cache_dir = tmp_path / "fetch_cache"
+    monkeypatch.setattr(librarian, "FETCH_CACHE_DIR", cache_dir)
+    mock_get.return_value = dict(VIDEO_STUB, platform="youtube")
+
+    args = MagicMock(analysis_file=None, no_whisper=True, subdir=None, dry_run=True)
+    assert librarian.process_single_video("https://youtu.be/abc123", args) is True
+
+    printed = capsys.readouterr().out
+    assert "Test Video" in printed
+
+    cache_files = list(cache_dir.glob("*.json"))
+    assert len(cache_files) == 1
+    cached = json.loads(cache_files[0].read_text(encoding="utf-8"))
+    assert cached["url"] == "https://youtu.be/abc123"
+    assert cached["title"] == "Test Video"

@@ -35,7 +35,7 @@ accumulate across videos so a source can be promoted to "worth watching" or demo
 entertainment. Collections (`library/<name>/README.md`) define genre-specific treatments; read the
 relevant one before writing a report.
 
-Read `DECISIONS.md` before changing architecture or infrastructure.
+Check `git log` for past architecture decisions before changing architecture or infrastructure.
 
 ## Stakes
 
@@ -47,7 +47,7 @@ into something he'll rely on and repeat. Reliability of the grades is the whole 
 ## Gates
 
 **Before publishing any fact-check, `FACT_CHECK_PROTOCOL.md` is mandatory reading.** It encodes
-five named failure modes from a real 11% first-pass error rate. The three that matter most:
+seven named failure modes from a real 11% first-pass error rate. The three that matter most:
 
 1. **No grade from memory.** If you did not search it, it is `⚪ Unchecked` — a legitimate grade.
    Assistant knowledge has a cutoff and most of what this library checks postdates it.

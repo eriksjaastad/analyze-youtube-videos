@@ -38,7 +38,7 @@ accumulate across videos so a source can be promoted to "worth watching" or demo
 entertainment. Collections (`library/<name>/README.md`) define genre-specific treatments; read the
 relevant one before writing a report.
 
-Read `DECISIONS.md` before changing architecture or infrastructure.
+Check `git log` for past architecture decisions before changing architecture or infrastructure.
 
 ## Stakes
 
@@ -50,7 +50,7 @@ into something he'll rely on and repeat. Reliability of the grades is the whole 
 ## Gates
 
 **Before publishing any fact-check, `FACT_CHECK_PROTOCOL.md` is mandatory reading.** It encodes
-five named failure modes from a real 11% first-pass error rate. The three that matter most:
+seven named failure modes from a real 11% first-pass error rate. The three that matter most:
 
 1. **No grade from memory.** If you did not search it, it is `⚪ Unchecked` — a legitimate grade.
    Assistant knowledge has a cutoff and most of what this library checks postdates it.
@@ -139,10 +139,10 @@ hooks in `~/.claude/` and by `pt` CLI commands in project-tracker. **Treat this 
 > in sync with its registry-declared authoring surface. Refresh through the
 > shared-rule rollout; do not hand-copy rules into individual projects.
 
-These rules apply to Codex and Claude local reviewers. Codex is primary; Claude
-remains supported. This block contains the essential checks for in-repository
-review without requiring workstation files. Additional local detail:
-[full protocol](https://github.com/eriksjaastad/agent-runtime-config/blob/main/docs/code-review-protocol.md).
+These rules apply to independent local code-reviewer subagents (Codex and Claude).
+Codex is primary; Claude remains supported. This block contains the essential
+checks for in-repository review without requiring workstation files. Additional
+local detail: [full protocol](https://github.com/eriksjaastad/agent-runtime-config/blob/main/docs/code-review-protocol.md).
 
 ### Mechanical checks
 
@@ -188,26 +188,12 @@ Read propagation sources first, execution-critical code next, then reference doc
   a repeated regression family requires reassessing the approach, not another
   isolated patch. Local preflight also consumes resources and must stay bounded.
 
-### Three independent review cycles: assess the result
+### Independent local review
 
-The initial independent review execution counts. Persist the work item's distinct
-review cycles, request/acknowledgement evidence, head SHAs and outcomes in its
-PR/task notes. Multiple comments or findings from one cycle are not multiple
-reviews. Count acknowledged failed/stalled executions; resolve uncertain history
-before triggering another. Follow the full PR policy's counting rules before
-pushes, requests, retries and merges.
-
-The third cycle may be requested after fixes and preflight. At that request or
-detection of an automatic third cycle, all agents on that work item stop edits,
-commits, pushes, further review requests and merges. Let that review finish.
-A clean third review on the unchanged recorded head may merge when CI and all
-other gates pass, without extra approval solely for its count. If findings remain,
-report the PR, SHA, findings, cycle evidence and recurring patterns to Erik; stop
-further fixes or requests until he directs the next step. Pending, unknown,
-ambiguous or stale evidence is not clearance; existing wait limits and unrelated
-user holds still apply. Do not reset the count by changing agents/sessions/branches
-or splitting/recreating the PR. A fourth cycle requires Erik's explicit direction;
-this never waives correctness or CI.
+Spin up an independent local code-reviewer subagent on the exact committed HEAD.
+Record the reviewed SHA, verdict and findings in the PR or task notes. Address
+findings, test the affected behavior and request a fresh review for each new
+commit. Repeated findings call for reassessing the approach and tests.
 
 ### Verdict and publication
 
@@ -216,9 +202,8 @@ a new commit requires fresh review. Review itself needs no workstation-tool acce
 
 Publishing/merging agents follow the complete [PR review and merge policy](https://github.com/eriksjaastad/agent-runtime-config/blob/main/docs/pr-review-policy.md),
 also mirrored in `pt info get pr_merge_policy` and `~/projects/Project-workflow.md`.
-Independent review clearance must identify the current head and clear findings;
-pending, stale, missing or ambiguous evidence is insufficient. If that policy is
-unavailable, stop publication/merging, not review. Third-review findings require
-a human discussion; clean third-review clearance follows the normal merge gates.
-An authorized exception is recorded as an exception, never as PASS.
+Independent local code-reviewer clearance must identify the current head and
+clear findings; pending, stale, missing or ambiguous evidence is insufficient.
+If that policy is unavailable, stop publication/merging, not review. An authorized
+exception is recorded as an exception, never as PASS.
 <!-- END runtime-doctor:shared:code-review-rules -->

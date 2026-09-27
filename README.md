@@ -26,6 +26,10 @@ uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..." --an
 uv run --with pyyaml scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limit 10
 ```
 
+The Whisper fallback (on by default, and always needed for Instagram, which has
+no captions) needs `--with faster-whisper==1.2.1` added to the prefix, or pass
+`--no-whisper` to skip it.
+
 Full flag reference lives in `uv run --with pyyaml scripts/librarian.py --help`.
 
 ### Collections
@@ -86,15 +90,20 @@ analyze-youtube-videos/
 │   ├── librarian.py       ← Transcript fetching, cleaning, library management
 │   ├── synthesize.py      ← Multi-document aggregation
 │   ├── bridge.py          ← Skill promotion to global library
-│   └── config.py          ← Shared config, env, utilities
+│   ├── config.py          ← Shared config, env, utilities
+│   └── evaluate_categories.py ← Category scoring evaluation
 ├── library/               ← Individual video reports
 │   ├── index.yaml         ← Source of truth
 │   └── 00_Index_Library.md
 ├── synthesis/             ← Cross-video strategy documents
 ├── config/
 │   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
+│   ├── categories.yaml        ← Category keywords (required by save)
 │   └── flagged_channels.yaml  ← Watchlist of low-trust sources (see below)
-└── tests/
+├── data/
+│   └── fetch_cache/       ← Gitignored; written by fetch mode
+├── tests/
+└── FACT_CHECK_PROTOCOL.md ← Grading rules (mandatory reading)
 ```
 
 ---
@@ -102,7 +111,7 @@ analyze-youtube-videos/
 ## Flagged Channels (Misinformation Watchlist)
 
 Some channels warrant heightened fact-checking scrutiny. `config/flagged_channels.yaml`
-holds a watchlist; on every fetch, the librarian checks the video's channel against it.
+holds a watchlist; on every fetch and save, the librarian checks the video's channel against it.
 
 - **Matching** is by stable `channel_id` first (immutable across renames), then `@handle`,
   then a case-insensitive display-name fallback.
@@ -211,8 +220,8 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
-| `synthesize.py` | Aggregate library entries for cross-video synthesis (run through Claude) |
-| `bridge.py` | Evaluate and promote skills to global library (run through Claude) |
+| `synthesize.py` | Non-functional stub: aggregation entry points raise NotImplementedError |
+| `bridge.py` | Non-functional stub: promotion entry points raise NotImplementedError |
 | `config.py` | Shared config: paths, env loading, subtitle selection, replacements |
 
 ---
@@ -220,11 +229,9 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 ## Testing
 
 ```bash
-uv run pytest tests/ -v
+uv run --with pyyaml==6.0.3 --with yt-dlp==2025.12.08 --with pytest==9.0.2 pytest -q
 ```
 
 ---
 
-## CI / Automated Code Review
-
-PRs are reviewed by Claude Sonnet via a [reusable workflow](https://github.com/eriksjaastad/tools/blob/main/.github/workflows/claude-review-reusable.yml) in the `tools` repo. Auto-merges on APPROVE, blocks on REQUEST_CHANGES.
+PRs get an independent local code review; see `pt info get pr_merge_policy`.
