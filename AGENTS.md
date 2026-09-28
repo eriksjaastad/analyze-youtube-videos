@@ -139,8 +139,9 @@ hooks in `~/.claude/` and by `pt` CLI commands in project-tracker. **Treat this 
 > in sync with its registry-declared authoring surface. Refresh through the
 > shared-rule rollout; do not hand-copy rules into individual projects.
 
-These rules apply to independent local code-reviewer subagents (Codex and Claude).
-Codex is primary; Claude remains supported. This block contains the essential
+These rules apply to an independent local Codex review process.
+Claude implements authorized coding cards; Codex reviews the exact committed
+HEAD. This block contains the essential
 checks for in-repository review without requiring workstation files. Additional
 local detail: [full protocol](https://github.com/eriksjaastad/agent-runtime-config/blob/main/docs/code-review-protocol.md).
 
@@ -190,7 +191,8 @@ Read propagation sources first, execution-critical code next, then reference doc
 
 ### Independent local review
 
-Spin up an independent local code-reviewer subagent on the exact committed HEAD.
+Run a separate local Codex reviewer process on the exact committed HEAD.
+The reviewer must not be the implementing agent or process.
 Record the reviewed SHA, verdict and findings in the PR or task notes. Address
 findings, test the affected behavior and request a fresh review for each new
 commit. Repeated findings call for reassessing the approach and tests.
@@ -207,3 +209,21 @@ clear findings; pending, stale, missing or ambiguous evidence is insufficient.
 If that policy is unavailable, stop publication/merging, not review. An authorized
 exception is recorded as an exception, never as PASS.
 <!-- END runtime-doctor:shared:code-review-rules -->
+
+<!-- BEGIN runtime-doctor:shared:model-seats -->
+## Model seats (Manager / Worker / Judge)
+
+Concrete bindings live in **`~/projects/MODEL_SEATS.md`** (update when vendors bounce). Full policy: **`~/projects/ORCHESTRATOR_CHEAP_CODER_RULES.md`**.
+
+- **Manager** (Codex / Claude / Grok Bot): plan, brief, verify, review, and handle PRs.
+- **Worker** (Claude Code): implement authorized code in an isolated task branch or worktree and run focused tests.
+- **Judge** (separate local Codex CLI process): review the exact committed HEAD under the ChatGPT login.
+
+### Floor-manager default on the MacBook
+
+For an authorized coding card, brief Claude Code with the card ID, acceptance criteria, working directory, owned files, focused tests, a finite timeout when delegated, and action limits. Keep implementation in an isolated task branch or worktree. A Claude manager may implement directly. When Erik directs Codex manager implementation, or Claude is unavailable or unsuitable, record the reason on the card.
+
+Inspect the coder's diff, tests, and handoff before accepting its work. Invoke a separate local Codex reviewer process on the exact committed HEAD and record its full-SHA PASS or FAIL verdict. The implementing process cannot review its own work. A missing, stale, timed-out, or inconclusive review blocks publication; repeat review after a new commit. The floor manager owns integration, the PR, CI, and merge. The coder's response alone does not complete a card.
+
+Do not use DeepSeek as the coding Worker on the MacBook or Mini. The linked cutover cards own launcher and credential retirement; preserve their dependency gates. Current binding and rollback: `~/projects/MODEL_SEATS.md`.
+<!-- END runtime-doctor:shared:model-seats -->
