@@ -1,57 +1,5 @@
 import pytest
-from scripts.config import validate_json_data, create_temp_dir_name, select_subtitle
-
-def test_validate_json_data():
-    # Valid dict
-    data = {"SKILL_MD": "content", "RULE_MD": "content", "README_MD": "content"}
-    is_valid, error = validate_json_data(data)
-    assert is_valid is True
-    assert error is None
-
-    # Only required key present — should still be valid
-    data = {"SKILL_MD": "content"}
-    is_valid, error = validate_json_data(data)
-    assert is_valid is True
-    assert error is None
-
-    # Missing required key
-    data = {"OTHER_KEY": "content"}
-    is_valid, error = validate_json_data(data)
-    assert is_valid is False
-    assert "Missing required key" in error
-
-    # None input
-    is_valid, error = validate_json_data(None)
-    assert is_valid is False
-    assert "not a dictionary" in error
-
-    # Non-dict input
-    is_valid, error = validate_json_data("not a dict")
-    assert is_valid is False
-    assert "not a dictionary" in error
-
-def test_create_temp_dir_name():
-    url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    dir_name = create_temp_dir_name(url)
-    assert dir_name.startswith("transcript_")
-    assert len(dir_name) == len("transcript_") + 8
-    
-    # Consistency
-    assert create_temp_dir_name(url) == dir_name
-    
-    # Uniqueness
-    assert create_temp_dir_name("https://youtube.com/other") != dir_name
-
-def test_create_temp_dir_name_variations():
-    urls = [
-        "https://youtube.com/watch?v=123",
-        "https://youtu.be/123",
-        "https://www.youtube.com/watch?v=123&t=10s",
-        "youtube.com/watch?v=123"
-    ]
-    # Each unique string should have unique hash
-    hashes = [create_temp_dir_name(u) for u in urls]
-    assert len(set(hashes)) == len(urls)
+from scripts.config import select_subtitle, has_manual_english_subs
 
 def test_select_subtitle_priority():
     base = "transcript"
@@ -65,13 +13,6 @@ def test_select_subtitle_priority():
     # Manual any vs Auto any
     assert select_subtitle(["transcript.fr.srt", "transcript.en.auto.srt"], base) == "transcript.fr.srt"
 
-@pytest.mark.parametrize("url,expected", [
-    ("https://youtube.com/1", "transcript_3c52936a"),
-    ("https://youtube.com/2", "transcript_9aa625c6"),
-])
-def test_create_temp_dir_name_parameterized(url, expected):
-    assert create_temp_dir_name(url) == expected
-
 def test_select_subtitle_tiktok_vtt():
     """Verify TikTok VTT files with eng-US locale are found and prioritized."""
     base = "transcript"
@@ -83,7 +24,24 @@ def test_select_subtitle_tiktok_vtt():
     assert select_subtitle(["transcript.en.srt", "transcript.eng-US.vtt"], base) == "transcript.en.srt"
 
 
-def test_validate_json_data_types():
-    # Test with unexpected types
-    assert validate_json_data(123)[0] is False
-    assert validate_json_data([])[0] is False
+def test_select_subtitle_prefer_original_picks_en_orig():
+    files = ["transcript.en.srt", "transcript.en-orig.srt", "transcript.en-US.srt"]
+    assert select_subtitle(files, "transcript", prefer_original=True) == "transcript.en-orig.srt"
+
+
+def test_select_subtitle_prefer_original_falls_back_without_en_orig():
+    files = ["transcript.en.srt", "transcript.fr-FR-orig.srt"]
+    assert select_subtitle(files, "transcript", prefer_original=True) == "transcript.en.srt"
+
+
+@pytest.mark.parametrize("subtitles,expected", [
+    ({}, False),
+    (None, False),
+    ({"live_chat": []}, False),
+    ({"fr": []}, False),
+    ({"en": []}, True),
+    ({"en-US": []}, True),
+    ({"eng-US": []}, True),
+])
+def test_has_manual_english_subs(subtitles, expected):
+    assert has_manual_english_subs({"subtitles": subtitles}) is expected

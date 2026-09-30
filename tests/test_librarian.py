@@ -988,9 +988,8 @@ def test_instagram_does_not_invent_handle_from_name_id_or_route(url, caplog):
 @patch("scripts.librarian.get_video_data")
 @patch("scripts.librarian.save_to_library")
 @patch("scripts.librarian.update_index", return_value=True)
-@patch("scripts.librarian.update_queue")
 def test_save_mode_emits_flag_warning_for_flagged_channel(
-    mock_queue, mock_index, mock_save, mock_get, flag_config, tmp_path, monkeypatch, caplog
+    mock_index, mock_save, mock_get, flag_config, tmp_path, monkeypatch, caplog
 ):
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "categories.yaml").write_text(
@@ -1058,3 +1057,54 @@ def test_fetch_mode_dry_run_still_writes_fetch_cache(
     cached = json.loads(cache_files[0].read_text(encoding="utf-8"))
     assert cached["url"] == "https://youtu.be/abc123"
     assert cached["title"] == "Test Video"
+
+
+# --- subtitle track choice on auto-dubbed videos ---------------------------------
+# On an auto-dubbed video the plain "en" auto track can be a machine translation
+# round-tripped through a dub; en-orig is recognition of the original audio.
+
+def _fake_ytdlp(metadata, written_tracks, calls):
+    """run_with_retry stand-in: metadata on the first call, subtitle files on the second."""
+    def run(cmd, timeout, **kwargs):
+        calls.append(cmd)
+        if "--print-json" in cmd:
+            return MagicMock(returncode=0, stdout=json.dumps(metadata), stderr="")
+        base = cmd[cmd.index("--output") + 1]
+        for lang, text in written_tracks.items():
+            Path(f"{base}.{lang}.srt").write_text(
+                f"1\n00:00:01,000 --> 00:00:02,000\n{text}\n", encoding="utf-8"
+            )
+        return MagicMock(returncode=0, stdout="", stderr="")
+    return run
+
+
+def test_get_video_data_prefers_en_orig_without_manual_english(tmp_path, monkeypatch):
+    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    calls = []
+    metadata = {"title": "Dubbed", "uploader": "Chan", "id": "dub1", "subtitles": {}}
+    tracks = {"en": "translated round trip", "en-orig": "original speech"}
+    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
+
+    data = get_video_data("https://youtube.com/watch?v=dub1", use_whisper_fallback=False)
+
+    assert "original speech" in data["transcript"]
+    assert "translated" not in data["transcript"]
+    sub_langs = calls[1][calls[1].index("--sub-lang") + 1]
+    assert sub_langs.split(",")[0] == "en-orig"
+
+
+def test_get_video_data_keeps_manual_english_over_en_orig(tmp_path, monkeypatch):
+    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    calls = []
+    metadata = {
+        "title": "Captioned", "uploader": "Chan", "id": "cap1",
+        "subtitles": {"en": [{"ext": "srt"}], "live_chat": []},
+    }
+    tracks = {"en": "human captions"}
+    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
+
+    data = get_video_data("https://youtube.com/watch?v=cap1", use_whisper_fallback=False)
+
+    assert "human captions" in data["transcript"]
+    sub_langs = calls[1][calls[1].index("--sub-lang") + 1]
+    assert "en-orig" not in sub_langs.split(",")

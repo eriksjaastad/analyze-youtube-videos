@@ -88,14 +88,11 @@ external factual claims.
 analyze-youtube-videos/
 ├── scripts/
 │   ├── librarian.py       ← Transcript fetching, cleaning, library management
-│   ├── synthesize.py      ← Multi-document aggregation
-│   ├── bridge.py          ← Skill promotion to global library
 │   ├── config.py          ← Shared config, env, utilities
 │   └── evaluate_categories.py ← Category scoring evaluation
 ├── library/               ← Individual video reports
 │   ├── index.yaml         ← Source of truth
 │   └── 00_Index_Library.md
-├── synthesis/             ← Cross-video strategy documents
 ├── config/
 │   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
 │   ├── categories.yaml        ← Category keywords (required by save)
@@ -220,8 +217,6 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
-| `synthesize.py` | Non-functional stub: aggregation entry points raise NotImplementedError |
-| `bridge.py` | Non-functional stub: promotion entry points raise NotImplementedError |
 | `config.py` | Shared config: paths, env loading, subtitle selection, replacements |
 
 ---
@@ -229,8 +224,11 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 ## Testing
 
 ```bash
-uv run --with pyyaml==6.0.3 --with yt-dlp==2025.12.08 --with pytest==9.0.2 pytest -q
+uv run --with pyyaml==6.0.3 --with pytest==9.0.2 pytest -q
 ```
+
+Tests mock every yt-dlp call. The runtime uses the Homebrew `yt-dlp` on PATH, deliberately unpinned
+(see the Dependencies section of `scripts/librarian.py`).
 
 ---
 

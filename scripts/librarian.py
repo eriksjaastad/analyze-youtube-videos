@@ -14,8 +14,7 @@ save (--analysis-file)
     Loads a pre-written markdown analysis, applies config/replacements.yaml,
     runs the claim-source audit (warns on empty Source cells, never blocks),
     writes the report to library/, updates library/index.yaml, re-renders
-    library/00_Index_Library.md, and moves the URL to Analyzed in
-    VIDEOS_QUEUE.md. Requires config/categories.yaml. Video data comes from
+    library/00_Index_Library.md. Requires config/categories.yaml. Video data comes from
     --data-file when given, otherwise from a fetch cache file whose url
     matches, otherwise from a metadata-only fetch; save never downloads
     subtitles or audio.
@@ -47,9 +46,9 @@ url
 --delay
     Delay in seconds between videos in batch mode (default: 45).
 --dry-run
-    Save mode only: don't write the report or update the index and queue,
-    just show the report. Fetch mode ignores it and still writes
-    data/fetch_cache.
+    Save mode only: show the report without writing anything to library/.
+    Fetch mode ignores it and still writes data/fetch_cache, the input a
+    later offline save needs.
 --analysis-file
     Path to a markdown file containing pre-generated analysis to save.
 --data-file
@@ -73,7 +72,10 @@ Dependencies
     The invocation prefix is `uv run --with pyyaml`. The Whisper fallback
     (on by default, and always needed for Instagram, which has no captions)
     also needs `--with faster-whisper==1.2.1`, else pass --no-whisper.
-    yt-dlp is invoked as a subprocess from PATH.
+    yt-dlp is invoked as a subprocess from PATH on purpose, not pinned:
+    YouTube changes break old yt-dlp releases within weeks, so the runtime
+    wants the current Homebrew build (`brew upgrade yt-dlp`). The test
+    suite mocks every yt-dlp call and needs no yt-dlp at all.
 
 Exit codes
 ----------
@@ -99,7 +101,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
-from scripts.config import LIBRARY_DIR, TEMP_DIR, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
+from scripts.config import LIBRARY_DIR, TEMP_DIR, ORIGINAL_ENGLISH_SUB_LANG, has_manual_english_subs, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
 
 # data/ is gitignored; the fetch cache is a local convenience, not library content.
 FETCH_CACHE_DIR = Path(os.getenv("FETCH_CACHE_DIR", "data/fetch_cache"))
@@ -394,12 +396,18 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
             if not metadata_only:
                 logger.info("[*] Fetching manual and auto-subtitles...")
                 sub_path_base = str(unique_temp / "transcript")
+                # Without a manual English track, also request en-orig: on auto-dubbed
+                # videos the plain "en" auto track can be a machine translation.
+                prefer_original = not has_manual_english_subs(metadata)
+                sub_langs = "en,en-US,en-GB,eng,eng-US,eng-GB"
+                if prefer_original:
+                    sub_langs = f"{ORIGINAL_ENGLISH_SUB_LANG},{sub_langs}"
                 cmd_subs = [
                     "yt-dlp",
                     "--skip-download",
                     "--write-subs",
                     "--write-auto-subs",
-                    "--sub-lang", "en,en-US,en-GB,eng,eng-US,eng-GB",
+                    "--sub-lang", sub_langs,
                     "--sub-format", "srt/vtt/best",
                     "--output", sub_path_base,
                     url
@@ -413,9 +421,10 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
                     logger.debug(f"Stderr: {error_msg}")
 
                 srt_files = [f for f in os.listdir(unique_temp) if f.endswith(('.srt', '.vtt'))]
-                target_file = select_subtitle(srt_files, "transcript")
+                target_file = select_subtitle(srt_files, "transcript", prefer_original=prefer_original)
 
                 if target_file:
+                    logger.info(f"[*] Using subtitle track {target_file}")
                     target_path = unique_temp / target_file
                     with open(target_path, 'r', encoding='utf-8') as f:
                         srt_content = f.read()
@@ -575,87 +584,6 @@ def _load_save_data(url: str, args) -> Optional[Dict[str, Any]]:
     if isinstance(data, dict):
         _fill_save_data_defaults(data)
     return data
-
-
-def build_tutorial_prompt(data: Dict[str, Any]) -> str:
-    """Build a tutorial-extraction prompt for short-form or long-form video content."""
-    return f"""You are a senior technical writer creating a step-by-step tutorial from a video transcript. Your task is to extract the creator's exact workflow and turn it into reproducible documentation that someone could follow without watching the video.
-
-**VIDEO METADATA**
-- Title: {data['title']}
-- Channel: {data['channel']}
-- Duration: {data['duration_string']}
-- Platform: {data.get('platform', 'unknown')}
-
-**TRANSCRIPT TO ANALYZE**
-{data['transcript']}
-
----
-
-**YOUR OUTPUT MUST FOLLOW THIS EXACT STRUCTURE:**
-
-## Tutorial: [Descriptive title of what you'll learn]
-
-**Source:** "{data['title']}" by {data['channel']}
-**Duration:** {data['duration_string']}
-**Difficulty:** [Beginner / Intermediate / Advanced]
-
----
-
-## What You'll Build / Achieve
-
-[1-2 sentences: What is the end result of following this tutorial?]
-
----
-
-## Tools & Resources Required
-
-[Bulleted list of every tool, platform, model, or resource mentioned. For each:
-- **Name** — what it is, whether it's free/paid, and its URL if mentioned
-- Mark which are essential vs. optional]
-
----
-
-## Step-by-Step Workflow
-
-[This is the core of the tutorial. Break the video into numbered steps. For each step:
-1. **Step title** — what you're doing
-   - Detailed instructions on HOW to do it
-   - Include specific settings, prompts, parameters, or configurations mentioned
-   - Note any tips or warnings the creator gives
-   - If the creator shows a specific prompt or text, quote it exactly]
-
----
-
-## Pro Tips & Tricks
-
-[Bulleted list of non-obvious techniques, shortcuts, or lessons the creator shares. These are the "insider knowledge" bits that make the tutorial valuable beyond basic steps.]
-
----
-
-## Common Mistakes to Avoid
-
-[If the creator mentions pitfalls, failures, or things that don't work — list them here. If not mentioned, omit this section entirely.]
-
----
-
-## Related Workflows
-
-[Brief list of related techniques or next steps the creator mentions or that would logically follow.]
-
----
-
-**IMPORTANT RULES:**
-1. Extract SPECIFIC details — exact tool names, model names, prompt text, settings values
-2. The goal is REPRODUCIBILITY — someone should be able to follow this without watching the video
-3. If the creator uses a specific prompt, quote it verbatim in a code block
-4. Do NOT include meta-commentary about your process
-5. Do NOT pad with generic advice — only include what the creator actually said or showed
-6. IGNORE sponsor segments, like/subscribe requests, and promotional content
-7. Focus on the WORKFLOW — the sequence of actions, not opinions
-8. Output ONLY the markdown content — no preamble or explanation
-
-BEGIN YOUR TUTORIAL EXTRACTION:"""
 
 
 _MD_LINK_RE = re.compile(r'\[[^\]]+\]\([^)]+\)|https?://')
@@ -864,7 +792,8 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
             logger.warning(f"[!] Subdir {subdir!r} sanitized to empty; saving to library root instead.")
         else:
             target_dir = LIBRARY_DIR / slugged
-            target_dir.mkdir(parents=True, exist_ok=True)
+    # Created here, not at startup, so --dry-run leaves library/ untouched.
+    target_dir.mkdir(parents=True, exist_ok=True)
     filepath = target_dir / filename
 
     # Traversal Guard
@@ -1054,50 +983,6 @@ def update_index(entry_data: Dict[str, Any]) -> bool:
     atomic_write(index_md_path, md_content)
     logger.info(f"Updated index YAML and rendered Markdown at {index_md_path}")
     return True
-
-def update_queue(url: str, title: str, channel: str, filepath: Path) -> None:
-    """
-    Moves a URL from the Priority Queue to the Analyzed section in VIDEOS_QUEUE.md.
-    """
-    queue_file = Path("VIDEOS_QUEUE.md")
-    if not queue_file.exists():
-        logger.info(f"No queue file found at {queue_file}. Skipping queue update.")
-        return
-
-    with open(queue_file, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-
-    new_lines = []
-    found = False
-    in_priority = False
-    
-    priority_marker = "### Priority Queue"
-    analyzed_marker = "## Videos Analyzed"
-    clean_url = url.split('?si=')[0].split('&si=')[0]
-
-    for line in lines:
-        if priority_marker in line:
-            in_priority = True
-            new_lines.append(line)
-            continue
-        if analyzed_marker in line:
-            in_priority = False
-            new_lines.append(line)
-            if found:
-                entry = f"- [x] **\"{title}\"** by {channel}\n"
-                entry += f"  - **Date analyzed:** {datetime.now().strftime('%Y-%m-%d')}\n"
-                entry += f"  - **URL:** {url}\n"
-                entry += f"  - **Location:** `{filepath}`\n\n"
-                new_lines.append(entry)
-            continue
-        if in_priority and clean_url in line:
-            found = True
-            continue
-        new_lines.append(line)
-
-    if found:
-        atomic_write(queue_file, "".join(new_lines))
-        logger.info(f"Updated {queue_file}: Moved to Analyzed.")
 
 def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> List[str]:
     """
@@ -1376,10 +1261,7 @@ def process_single_video(url: str, args) -> bool:
     if filepath.parent != LIBRARY_DIR:
         entry_data["collection"] = filepath.parent.name
 
-    if not update_index(entry_data):
-        return False
-    update_queue(url, data['title'], data['channel'], filepath)
-    return True
+    return update_index(entry_data)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1392,7 +1274,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
     parser.add_argument("--limit", type=int, help="Limit number of videos to process in batch mode")
     parser.add_argument("--delay", type=int, default=45, help="Delay in seconds between videos in batch mode (default: 45)")
-    parser.add_argument("--dry-run", action="store_true", help="Don't write files, just show output")
+    parser.add_argument("--dry-run", action="store_true", help="Save mode only: show the report without writing to library/")
     parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
     parser.add_argument("--data-file", help="Path to JSON previously printed by fetch mode to use as video data (requires --analysis-file)")
     parser.add_argument("--no-whisper", action="store_true", help="Disable Whisper fallback for videos without transcripts")

@@ -1,11 +1,9 @@
 import os
-import hashlib
 import re
-import shutil
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 # --- Logging Configuration ---
 logging.basicConfig(
@@ -20,8 +18,6 @@ logger = logging.getLogger("warden")
 # --- Configuration Centralization ---
 LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
-LOCAL_SKILLS_PATH = Path(os.getenv("LOCAL_SKILLS_PATH", "skills"))
-SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
 
 def safe_slug(text: str) -> str:
     """
@@ -34,27 +30,27 @@ def safe_slug(text: str) -> str:
     text = re.sub(r'[^\w\s-]', '', text).strip().lower()
     return re.sub(r'[-\s]+', '-', text)
 
-def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
-    """Validate JSON data contains required keys for the global library."""
-    required_keys = {"SKILL_MD"}
-    if data is None or not isinstance(data, dict):
-        return False, "Validation Failed: Input is not a dictionary."
-    
-    if not required_keys.issubset(data.keys()):
-        missing = required_keys - set(data.keys())
-        return False, f"Validation Failed: Missing required key: {missing}"
-    return True, None
+ORIGINAL_ENGLISH_SUB_LANG = "en-orig"
 
-def create_temp_dir_name(url: str) -> str:
-    """Generate a unique temporary directory name based on YouTube URL."""
-    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-    return f"transcript_{url_hash}"
 
-def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
+def has_manual_english_subs(metadata: dict) -> bool:
+    """True if yt-dlp metadata lists a human-made English subtitle track."""
+    return any(
+        lang.lower().startswith("en")
+        for lang in (metadata.get("subtitles") or {})
+    )
+
+
+def select_subtitle(filenames: List[str], base_name: str, prefer_original: bool = False) -> Optional[str]:
     """
     Select subtitle file from list of filenames, prioritizing manual over auto.
     Locale-agnostic regex to catch variants like .en-US.srt, .en-GB.srt, and .vtt files.
     Supports both SRT and VTT formats (TikTok serves VTT).
+
+    With prefer_original=True, an en-orig file wins outright. On auto-dubbed YouTube
+    videos the plain "en" auto track can be translated back from a dub; en-orig is
+    the speech recognition of the original audio. Pass it only when the video has no
+    manual English track, since en-orig is auto-generated too.
     """
     # Pattern: base_name.LOCALE.[auto.]srt or base_name.LOCALE.[auto.]vtt
     # Group 1: Locale (e.g., en, en-US), Group 2: .auto/ .auto-subs (optional)
@@ -66,6 +62,8 @@ def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
     for f in filenames:
         match = pattern.match(f)
         if match:
+            if prefer_original and match.group(1).lower() == ORIGINAL_ENGLISH_SUB_LANG:
+                return f
             is_auto = match.group(2) is not None
             if is_auto:
                 auto_matches.append(f)
@@ -85,38 +83,12 @@ def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
         
     return None
 
-def check_environment() -> bool:
-    """
-    Proactive health check for critical dependencies and paths.
-    Refuses to start if misconfigured.
-    """
-    # Check yt-dlp
-    if not shutil.which("yt-dlp"):
-        logger.error("Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
-        return False
-
-    # Check critical paths and writability
-    critical_paths = [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]
-    for path in critical_paths:
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            # Test writability
-            test_file = path / ".warden_test"
-            test_file.touch()
-            test_file.unlink()
-        except Exception as e:
-            logger.error(f"Critical: Path {path} is not writable or cannot be created: {e}")
-            return False
-
-    logger.info("Environment check passed.")
-    return True
-
 def initialize_directories() -> None:
     """
-    Ensures all necessary directories exist.
+    Ensures the yt-dlp scratch directory exists. library/ is created by the
+    save that writes to it, so --dry-run never creates it.
     """
-    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def apply_replacements(content: str) -> str:
