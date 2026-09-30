@@ -229,8 +229,11 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 ## Testing
 
 ```bash
-uv run --with pyyaml==6.0.3 --with yt-dlp==2025.12.08 --with pytest==9.0.2 pytest -q
+uv run --with pyyaml==6.0.3 --with pytest==9.0.2 pytest -q
 ```
+
+Tests mock every yt-dlp call. The runtime uses the Homebrew `yt-dlp` on PATH, deliberately unpinned
+(see the Dependencies section of `scripts/librarian.py`).
 
 ---
 

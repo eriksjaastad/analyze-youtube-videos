@@ -1,5 +1,4 @@
 PyYAML==6.0.3
 pytest==9.0.2
-yt-dlp==2025.12.08
 
 faster-whisper==1.2.1

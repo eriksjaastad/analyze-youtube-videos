@@ -11,7 +11,8 @@
 1. **Add video URL** to "To Analyze" section below
 2. **Fetch metadata + transcript:** `uv run --with pyyaml scripts/librarian.py [URL]` prints JSON and caches it under `data/fetch_cache/`
 3. **Claude writes the analysis** from that JSON (the librarian never analyzes)
-4. **Save it:** `uv run --with pyyaml scripts/librarian.py [URL] --analysis-file <report.md>` writes the report to `library/`, updates the index, and moves the URL to "Analyzed"
+4. **Save it:** `uv run --with pyyaml scripts/librarian.py [URL] --analysis-file <report.md>` writes the report to `library/` and updates the index
+5. **Remove the URL here by hand.** The librarian stopped editing this file on 2026-09-30; `library/index.yaml` is the record of what has been analyzed, and the "Videos Analyzed" list below ends in February 2026
 
 ---
 
@@ -153,17 +154,17 @@ https://youtu.be/KYe2IToDzl4 - **Prof Steve Keen, "You Won't Believe Who's Actua
 # Fetch metadata + transcript as JSON (also cached under data/fetch_cache/)
 uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID
 
-# Save a report written by Claude (moves the URL to "Analyzed")
+# Save a report written by Claude
 uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md
 
-# Dry run: preview the save without writing the report or updating the index/queue
+# Dry run: preview the save without writing anything to library/
 uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md --dry-run
 ```
 
 ### What Gets Created
 
 - **Fetch** prints metadata + transcript JSON to stdout and caches it under `data/fetch_cache/`
-- **Save** writes the report to `library/`, updates `library/index.yaml` and `library/00_Index_Library.md`, and moves the URL to "Analyzed"
+- **Save** writes the report to `library/` and updates `library/index.yaml` and `library/00_Index_Library.md`
 - The librarian never analyzes — Claude writes the analysis
 
 ### Related Files

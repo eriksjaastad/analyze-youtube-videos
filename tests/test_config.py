@@ -1,5 +1,5 @@
 import pytest
-from scripts.config import validate_json_data, create_temp_dir_name, select_subtitle
+from scripts.config import validate_json_data, create_temp_dir_name, select_subtitle, has_manual_english_subs
 
 def test_validate_json_data():
     # Valid dict
@@ -87,3 +87,26 @@ def test_validate_json_data_types():
     # Test with unexpected types
     assert validate_json_data(123)[0] is False
     assert validate_json_data([])[0] is False
+
+
+def test_select_subtitle_prefer_original_picks_en_orig():
+    files = ["transcript.en.srt", "transcript.en-orig.srt", "transcript.en-US.srt"]
+    assert select_subtitle(files, "transcript", prefer_original=True) == "transcript.en-orig.srt"
+
+
+def test_select_subtitle_prefer_original_falls_back_without_en_orig():
+    files = ["transcript.en.srt", "transcript.fr-FR-orig.srt"]
+    assert select_subtitle(files, "transcript", prefer_original=True) == "transcript.en.srt"
+
+
+@pytest.mark.parametrize("subtitles,expected", [
+    ({}, False),
+    (None, False),
+    ({"live_chat": []}, False),
+    ({"fr": []}, False),
+    ({"en": []}, True),
+    ({"en-US": []}, True),
+    ({"eng-US": []}, True),
+])
+def test_has_manual_english_subs(subtitles, expected):
+    assert has_manual_english_subs({"subtitles": subtitles}) is expected

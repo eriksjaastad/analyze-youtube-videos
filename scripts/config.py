@@ -50,11 +50,27 @@ def create_temp_dir_name(url: str) -> str:
     url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
     return f"transcript_{url_hash}"
 
-def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
+ORIGINAL_ENGLISH_SUB_LANG = "en-orig"
+
+
+def has_manual_english_subs(metadata: dict) -> bool:
+    """True if yt-dlp metadata lists a human-made English subtitle track."""
+    return any(
+        lang.lower().startswith("en")
+        for lang in (metadata.get("subtitles") or {})
+    )
+
+
+def select_subtitle(filenames: List[str], base_name: str, prefer_original: bool = False) -> Optional[str]:
     """
     Select subtitle file from list of filenames, prioritizing manual over auto.
     Locale-agnostic regex to catch variants like .en-US.srt, .en-GB.srt, and .vtt files.
     Supports both SRT and VTT formats (TikTok serves VTT).
+
+    With prefer_original=True, an en-orig file wins outright. On auto-dubbed YouTube
+    videos the plain "en" auto track can be translated back from a dub; en-orig is
+    the speech recognition of the original audio. Pass it only when the video has no
+    manual English track, since en-orig is auto-generated too.
     """
     # Pattern: base_name.LOCALE.[auto.]srt or base_name.LOCALE.[auto.]vtt
     # Group 1: Locale (e.g., en, en-US), Group 2: .auto/ .auto-subs (optional)
@@ -66,6 +82,8 @@ def select_subtitle(filenames: List[str], base_name: str) -> Optional[str]:
     for f in filenames:
         match = pattern.match(f)
         if match:
+            if prefer_original and match.group(1).lower() == ORIGINAL_ENGLISH_SUB_LANG:
+                return f
             is_auto = match.group(2) is not None
             if is_auto:
                 auto_matches.append(f)
@@ -113,10 +131,10 @@ def check_environment() -> bool:
 
 def initialize_directories() -> None:
     """
-    Ensures all necessary directories exist.
+    Ensures the yt-dlp scratch directory exists. library/ is created by the
+    save that writes to it, so --dry-run never creates it.
     """
-    for d in [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def apply_replacements(content: str) -> str:
