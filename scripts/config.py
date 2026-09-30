@@ -1,11 +1,9 @@
 import os
-import hashlib
 import re
-import shutil
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Optional, List
 
 # --- Logging Configuration ---
 logging.basicConfig(
@@ -20,8 +18,6 @@ logger = logging.getLogger("warden")
 # --- Configuration Centralization ---
 LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "scripts/temp"))
-LOCAL_SKILLS_PATH = Path(os.getenv("LOCAL_SKILLS_PATH", "skills"))
-SYNTHESIS_DIR = Path(os.getenv("SYNTHESIS_DIR", "synthesis"))
 
 def safe_slug(text: str) -> str:
     """
@@ -33,22 +29,6 @@ def safe_slug(text: str) -> str:
     # Replace non-word characters with hyphens and lowercase
     text = re.sub(r'[^\w\s-]', '', text).strip().lower()
     return re.sub(r'[-\s]+', '-', text)
-
-def validate_json_data(data: Optional[dict]) -> Tuple[bool, Optional[str]]:
-    """Validate JSON data contains required keys for the global library."""
-    required_keys = {"SKILL_MD"}
-    if data is None or not isinstance(data, dict):
-        return False, "Validation Failed: Input is not a dictionary."
-    
-    if not required_keys.issubset(data.keys()):
-        missing = required_keys - set(data.keys())
-        return False, f"Validation Failed: Missing required key: {missing}"
-    return True, None
-
-def create_temp_dir_name(url: str) -> str:
-    """Generate a unique temporary directory name based on YouTube URL."""
-    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-    return f"transcript_{url_hash}"
 
 ORIGINAL_ENGLISH_SUB_LANG = "en-orig"
 
@@ -102,32 +82,6 @@ def select_subtitle(filenames: List[str], base_name: str, prefer_original: bool 
         return auto_matches[0]
         
     return None
-
-def check_environment() -> bool:
-    """
-    Proactive health check for critical dependencies and paths.
-    Refuses to start if misconfigured.
-    """
-    # Check yt-dlp
-    if not shutil.which("yt-dlp"):
-        logger.error("Critical: yt-dlp not found in PATH. Install via 'brew install yt-dlp'.")
-        return False
-
-    # Check critical paths and writability
-    critical_paths = [LIBRARY_DIR, SYNTHESIS_DIR, TEMP_DIR]
-    for path in critical_paths:
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            # Test writability
-            test_file = path / ".warden_test"
-            test_file.touch()
-            test_file.unlink()
-        except Exception as e:
-            logger.error(f"Critical: Path {path} is not writable or cannot be created: {e}")
-            return False
-
-    logger.info("Environment check passed.")
-    return True
 
 def initialize_directories() -> None:
     """

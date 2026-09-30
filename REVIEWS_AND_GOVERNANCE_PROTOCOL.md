@@ -10,7 +10,7 @@ model: two-layer defense — robotic scan (Gate 0) + cognitive audit
 
 tier_1: templates/, .cursorrules, AGENTS.md — propagation sources, highest impact
 tier_2: scripts/, scaffold/ — execution critical, don't propagate
-tier_3: .agent/rules/, patterns/, documentation — human reference, zero code impact
+tier_3: patterns/, documentation — human reference, zero code impact
 rule: audit in tier order — a Tier 1 defect infects every downstream project
 
 ## Two-Layer Defense
