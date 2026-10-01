@@ -345,6 +345,68 @@ def test_main_single_video_rate_limited_exits_1(monkeypatch):
     assert process.call_count == 1
 
 
+# --- broken flagged-channel watchlist ----------------------------------------
+
+def _broken_watchlist(tmp_path, monkeypatch):
+    cfg = tmp_path / "flagged_channels.yaml"
+    cfg.write_text("channels: [unclosed\n  - oops:", encoding="utf-8")
+    monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", cfg)
+
+
+@patch("scripts.librarian.get_video_data")
+def test_save_with_broken_watchlist_raises_before_writing_anything(
+    mock_get, save_env, monkeypatch
+):
+    _broken_watchlist(save_env.tmp_path, monkeypatch)
+    data_path = save_env.tmp_path / "fetch.json"
+    data_path.write_text(json.dumps(SAVE_DATA), encoding="utf-8")
+
+    with pytest.raises(librarian.FlaggedChannelsConfigError):
+        librarian.process_single_video(
+            SAVE_DATA["url"], _save_args(save_env.analysis, data_file=str(data_path))
+        )
+
+    assert not list(save_env.library_root.glob("*.md"))
+    assert not (save_env.library_root / "index.yaml").exists()
+
+
+def test_main_single_video_broken_watchlist_exits_1(monkeypatch, caplog):
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    process = MagicMock(side_effect=librarian.FlaggedChannelsConfigError("watchlist broken"))
+    monkeypatch.setattr(librarian, "process_single_video", process)
+    monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        librarian.main()
+
+    assert exc_info.value.code == 1
+    assert "watchlist broken" in caplog.text
+
+
+def test_batch_aborts_on_broken_watchlist(tmp_path, monkeypatch):
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: [
+        "https://youtu.be/a",
+        "https://youtu.be/b",
+    ])
+    process = MagicMock(side_effect=librarian.FlaggedChannelsConfigError("watchlist broken"))
+    monkeypatch.setattr(librarian, "process_single_video", process)
+    monkeypatch.setattr(librarian.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["librarian.py", "--batch-profile", "https://youtube.com/@creator", "--delay", "0"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        librarian.main()
+
+    assert exc_info.value.code == 1
+    assert process.call_count == 1
+
+
 def test_data_file_requires_analysis_file(monkeypatch):
     monkeypatch.setattr(
         "sys.argv",

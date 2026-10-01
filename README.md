@@ -118,7 +118,7 @@ holds a watchlist; on every fetch and save, the librarian checks the video's cha
   face value.
 
 Add a channel by appending an entry (find its IDs with the `yt-dlp --print` snippet in the
-file's header comment). The watchlist is advisory; it never blocks processing.
+file's header comment). The watchlist is advisory: a channel match never blocks processing, but a malformed or unreadable watchlist file stops the run with an error naming the file.
 
 ---
 
