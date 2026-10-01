@@ -92,11 +92,28 @@ def test_missing_config_returns_none(tmp_path, monkeypatch):
     assert check_flagged_channel({"channel": "Anything", "channel_id": "UCx", "uploader_id": "@x"}) is None
 
 
-def test_malformed_config_returns_none(tmp_path, monkeypatch):
+def test_malformed_config_raises_naming_the_file(tmp_path, monkeypatch):
     cfg = tmp_path / "bad.yaml"
     cfg.write_text("channels: [unclosed\n  - oops:")
     monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", cfg)
-    assert check_flagged_channel({"channel": "x", "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw", "uploader_id": ""}) is None
+    with pytest.raises(librarian.FlaggedChannelsConfigError, match="bad.yaml"):
+        check_flagged_channel({"channel": "x", "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw", "uploader_id": ""})
+
+
+def test_unreadable_config_raises_naming_the_file(tmp_path, monkeypatch):
+    cfg = tmp_path / "flagged_channels.yaml"
+    cfg.mkdir()  # exists, but open() fails with an OSError
+    monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", cfg)
+    with pytest.raises(librarian.FlaggedChannelsConfigError, match="flagged_channels.yaml"):
+        check_flagged_channel({"channel": "x", "channel_id": "UCx", "uploader_id": ""})
+
+
+def test_non_mapping_config_raises(tmp_path, monkeypatch):
+    cfg = tmp_path / "flagged_channels.yaml"
+    cfg.write_text("- just\n- a list\n")
+    monkeypatch.setattr(librarian, "FLAGGED_CHANNELS_PATH", cfg)
+    with pytest.raises(librarian.FlaggedChannelsConfigError, match="YAML mapping"):
+        check_flagged_channel({"channel": "x", "channel_id": "UCx", "uploader_id": ""})
 
 def test_clean_srt():
     srt_content = """1

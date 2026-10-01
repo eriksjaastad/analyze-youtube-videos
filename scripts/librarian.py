@@ -111,6 +111,14 @@ class RateLimitedError(RuntimeError):
     """YouTube answered HTTP 429; retrying would only make the rate limit worse."""
 
 
+class FlaggedChannelsConfigError(RuntimeError):
+    """config/flagged_channels.yaml exists but cannot be read or parsed.
+
+    Treating a broken watchlist as "no flags" would silently drop the extra
+    fact-check scrutiny for every flagged channel, so the run fails instead.
+    """
+
+
 def is_rate_limited(stderr: str) -> bool:
     """True when stderr reports an HTTP 429 rate limit (case-insensitive)."""
     if not stderr:
@@ -153,7 +161,7 @@ def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_dela
                 logger.error(f"Command failed after {max_retries} attempts")
                 return result  # Return the failed result for error handling
 
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired:  # governance: allow-silent SF002: None is run_with_retry's documented exhaustion result; every caller treats None as failure (get_video_data returns None -> process_single_video False -> exit 1; profile fetch -> 'No videos found' exit 1)
             if attempt < max_retries - 1:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
                 logger.warning(f"Command timed out (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
@@ -166,7 +174,7 @@ def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_dela
             logger.info("Interrupted by user")
             raise
 
-        except FileNotFoundError:
+        except FileNotFoundError:  # governance: allow-silent SF002: yt-dlp missing returns the documented None failure result; every caller treats None as a failed command and the CLI exits 1
             logger.error(f"Command not found: {cmd[0]}")
             return None
 
@@ -240,10 +248,10 @@ def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
 
     except RateLimitedError:
         raise
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired:  # governance: allow-silent SF002: None is download_audio's failure result; get_video_data logs 'Audio download failed' and, with no transcript, returns None so the CLI exits 1
         logger.error("Audio download timed out after 300 seconds")
         return None
-    except Exception as e:
+    except Exception as e:  # governance: allow-silent SF002: None is download_audio's failure result; get_video_data logs 'Audio download failed' and, with no transcript, returns None so the CLI exits 1
         logger.error(f"Error downloading audio: {e}")
         return None
 
@@ -314,10 +322,10 @@ def transcribe_with_whisper(audio_path: Path) -> Optional[str]:
 
         return transcript
 
-    except ImportError:
+    except ImportError:  # governance: allow-silent SF002: faster-whisper is an optional dependency; None is the failure result and get_video_data returns None (CLI exit 1) when no SRT transcript exists
         logger.error("faster-whisper not installed. Install with: pip install faster-whisper")
         return None
-    except Exception as e:
+    except Exception as e:  # governance: allow-silent SF002: None is transcribe_with_whisper's failure result; get_video_data returns None (CLI exit 1) when no SRT transcript exists
         logger.error(f"Whisper transcription failed: {e}")
         return None
 
@@ -332,7 +340,7 @@ def supported_platform(url: str) -> Optional[str]:
     try:
         has_scheme = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", url)
         parsed = urlsplit(url if has_scheme else "https://" + url)
-    except ValueError:
+    except ValueError:  # governance: allow-silent SF002: a URL urlsplit cannot parse is outside the supported-URL contract; None makes main() reject it via parser.error
         return None
     hosts = {"youtube.com": "youtube", "youtu.be": "youtube",
              "tiktok.com": "tiktok", "instagram.com": "instagram"}
@@ -498,10 +506,10 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
             }
         except RateLimitedError:
             raise
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
             logger.error(f"Subprocess timed out: {e}")
             return None
-        except Exception as e:
+        except Exception as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
             logger.error(f"Unexpected error in get_video_data: {e}")
             return None
 
@@ -521,7 +529,7 @@ def _load_data_file(url: str, data_file: str) -> Optional[Dict[str, Any]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, json.JSONDecodeError) as e:  # governance: allow-silent SF002: None is the --data-file failure result; process_single_video logs 'Failed to get video data' and main() exits 1
         logger.error(f"Could not read --data-file {data_file}: {e}")
         return None
     if not isinstance(data, dict):
@@ -941,7 +949,7 @@ def update_index(entry_data: Dict[str, Any]) -> bool:
         backup_yaml_path = index_yaml_path.with_suffix(".yaml.bak")
         try:
             shutil.copy2(index_yaml_path, backup_yaml_path)
-        except OSError as e:
+        except OSError as e:  # governance: allow-silent SF002: False is update_index's failure result (index left unrepaired); process_single_video returns it and main() exits 1
             logger.error("Could not back up index before category repair: %s", e)
             return False
 
@@ -1031,16 +1039,27 @@ def check_flagged_channel(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     Matches by channel_id (stable across renames), then @handle, then a
     case-insensitive display-name fallback. Returns the matching flag entry
-    (dict) or None. A missing/unreadable config is treated as "no flags".
+    (dict) or None. A missing config means "no flags". A config that exists
+    but is unreadable or malformed raises FlaggedChannelsConfigError: a broken
+    watchlist must fail the run, not silently unflag every channel. It is
+    called before anything is written for the video, so nothing is left
+    half-saved.
     """
+    if not FLAGGED_CHANNELS_PATH.exists():
+        return None
     try:
-        if not FLAGGED_CHANNELS_PATH.exists():
-            return None
         with open(FLAGGED_CHANNELS_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
     except (yaml.YAMLError, OSError) as e:
-        logger.warning(f"Could not read {FLAGGED_CHANNELS_PATH}: {e}")
-        return None
+        raise FlaggedChannelsConfigError(
+            f"Flagged-channel watchlist {FLAGGED_CHANNELS_PATH} is unreadable or "
+            f"malformed; fix it before fetching or saving: {e}"
+        ) from e
+    if not isinstance(config, dict):
+        raise FlaggedChannelsConfigError(
+            f"Flagged-channel watchlist {FLAGGED_CHANNELS_PATH} must be a YAML "
+            f"mapping with a 'channels' list, got {type(config).__name__}"
+        )
 
     cid = (data.get("channel_id") or "").strip()
     handle = _norm_handle(data.get("uploader_id"))
@@ -1341,6 +1360,11 @@ def main() -> None:
                 logger.error(f"Rate limited on {url}: {e}")
                 failed += 1
                 break
+            except FlaggedChannelsConfigError as e:
+                # Same watchlist for every remaining video: stop, don't fail each one.
+                logger.error(f"Aborting batch at {url}: {e}")
+                failed += 1
+                break
 
             if ok:
                 succeeded += 1
@@ -1363,6 +1387,9 @@ def main() -> None:
         ok = process_single_video(url, args)
     except RateLimitedError as e:
         logger.error(f"Rate limited on {url}: {e}")
+        sys.exit(1)
+    except FlaggedChannelsConfigError as e:
+        logger.error(f"CRITICAL ERROR: {e}")
         sys.exit(1)
 
     if not ok:
