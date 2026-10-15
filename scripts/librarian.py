@@ -101,7 +101,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
-from scripts.config import LIBRARY_DIR, TEMP_DIR, ORIGINAL_ENGLISH_SUB_LANG, has_manual_english_subs, select_subtitle, initialize_directories, safe_slug, logger, apply_replacements
+from scripts.config import LIBRARY_DIR, TEMP_DIR, choose_subtitle_track, initialize_directories, safe_slug, logger, apply_replacements
 
 # data/ is gitignored; the fetch cache is a local convenience, not library content.
 FETCH_CACHE_DIR = Path(os.getenv("FETCH_CACHE_DIR", "data/fetch_cache"))
@@ -375,7 +375,7 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
     Prioritizes manual subtitles over auto-generated ones.
     Uses tempfile.TemporaryDirectory for safe, automatic cleanup.
 
-    With metadata_only=True, only the --print-json metadata call runs and the
+    With metadata_only=True, only the --dump-json metadata call runs and the
     returned dict carries an empty transcript — no subtitle, audio, or Whisper.
     """
     with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="transcript_") as temp_dir:
@@ -384,10 +384,14 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
         try:
             logger.info(f"[*] Fetching metadata for: {url}")
 
+            # --dump-json simulates, so nothing downloads. The subtitle flags make
+            # extractors that list captions only on request (TikTok) include them
+            # in the metadata, which choose_subtitle_track reads.
             cmd_info = [
                 "yt-dlp",
-                "--skip-download",
-                "--print-json",
+                "--dump-json",
+                "--write-subs",
+                "--write-auto-subs",
                 url
             ]
             result = run_with_retry(cmd_info, timeout=60)
@@ -402,34 +406,33 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
 
             transcript = ""
             if not metadata_only:
-                logger.info("[*] Fetching manual and auto-subtitles...")
-                sub_path_base = str(unique_temp / "transcript")
-                # Without a manual English track, also request en-orig: on auto-dubbed
-                # videos the plain "en" auto track can be a machine translation.
-                prefer_original = not has_manual_english_subs(metadata)
-                sub_langs = "en,en-US,en-GB,eng,eng-US,eng-GB"
-                if prefer_original:
-                    sub_langs = f"{ORIGINAL_ENGLISH_SUB_LANG},{sub_langs}"
-                cmd_subs = [
-                    "yt-dlp",
-                    "--skip-download",
-                    "--write-subs",
-                    "--write-auto-subs",
-                    "--sub-lang", sub_langs,
-                    "--sub-format", "srt/vtt/best",
-                    "--output", sub_path_base,
-                    url
-                ]
-                sub_result = run_with_retry(cmd_subs, timeout=120)
-                if sub_result is None or sub_result.returncode != 0:
-                    if sub_result is not None and is_rate_limited(sub_result.stderr or ""):
-                        raise RateLimitedError(f"YouTube rate-limited the subtitle request for {url}")
-                    error_msg = sub_result.stderr if sub_result else "Command failed after retries"
-                    logger.warning(f"Subtitle fetch command failed for {url}.")
-                    logger.debug(f"Stderr: {error_msg}")
+                target_file = None
+                track = choose_subtitle_track(metadata)
+                if track:
+                    sub_lang, is_auto = track
+                    logger.info(f"[*] Fetching {'auto' if is_auto else 'manual'} subtitle track {sub_lang}...")
+                    cmd_subs = [
+                        "yt-dlp",
+                        "--skip-download",
+                        "--write-auto-subs" if is_auto else "--write-subs",
+                        "--sub-lang", sub_lang,
+                        "--sub-format", "srt/vtt/best",
+                        "--output", str(unique_temp / "transcript"),
+                        url
+                    ]
+                    sub_result = run_with_retry(cmd_subs, timeout=120)
+                    if sub_result is None or sub_result.returncode != 0:
+                        if sub_result is not None and is_rate_limited(sub_result.stderr or ""):
+                            raise RateLimitedError(f"YouTube rate-limited the subtitle request for {url}")
+                        error_msg = sub_result.stderr if sub_result else "Command failed after retries"
+                        logger.warning(f"Subtitle fetch command failed for {url}.")
+                        logger.debug(f"Stderr: {error_msg}")
 
-                srt_files = [f for f in os.listdir(unique_temp) if f.endswith(('.srt', '.vtt'))]
-                target_file = select_subtitle(srt_files, "transcript", prefer_original=prefer_original)
+                    target_file = next(
+                        (f for f in sorted(os.listdir(unique_temp)) if f.endswith(('.srt', '.vtt'))), None
+                    )
+                else:
+                    logger.warning("Metadata lists no English subtitle track.")
 
                 if target_file:
                     logger.info(f"[*] Using subtitle track {target_file}")
