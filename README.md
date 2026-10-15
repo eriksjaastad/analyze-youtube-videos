@@ -217,7 +217,7 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
-| `config.py` | Shared config: paths, env loading, subtitle selection, replacements |
+| `config.py` | Shared config: paths, logging, the one-caption-track choice, replacements |
 
 ---
 
