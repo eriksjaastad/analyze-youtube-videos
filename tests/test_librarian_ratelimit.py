@@ -91,7 +91,7 @@ def test_get_video_data_raises_on_subtitle_429_and_never_downloads_audio(
 ):
     mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
     mock_run.side_effect = [
-        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v"})),
+        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v", "automatic_captions": {"en-orig": []}})),
         _completed(1, stderr="ERROR: Too Many Requests"),
     ]
 
@@ -112,7 +112,7 @@ def test_get_video_data_whisper_fallback_audio_429_propagates(
     mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
     mock_listdir.return_value = []
     mock_run.side_effect = [
-        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v"})),
+        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v", "automatic_captions": {"en-orig": []}})),
         _completed(0),  # subtitle call succeeds but writes no subtitle files
     ]
     mock_subprocess_run.return_value = _completed(1, stderr="HTTP Error 429: Too Many Requests")

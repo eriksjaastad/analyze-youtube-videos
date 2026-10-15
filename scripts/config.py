@@ -3,7 +3,7 @@ import re
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 # --- Logging Configuration ---
 logging.basicConfig(
@@ -33,55 +33,34 @@ def safe_slug(text: str) -> str:
 ORIGINAL_ENGLISH_SUB_LANG = "en-orig"
 
 
-def has_manual_english_subs(metadata: dict) -> bool:
-    """True if yt-dlp metadata lists a human-made English subtitle track."""
-    return any(
-        lang.lower().startswith("en")
-        for lang in (metadata.get("subtitles") or {})
-    )
+def _first_english(tracks: Optional[dict]) -> Optional[str]:
+    """The alphabetically first English language key (en, en-US, eng-US, ...), or None."""
+    english = sorted(lang for lang in (tracks or {}) if lang.lower().startswith("en"))
+    return english[0] if english else None
 
 
-def select_subtitle(filenames: List[str], base_name: str, prefer_original: bool = False) -> Optional[str]:
+def choose_subtitle_track(metadata: dict) -> Optional[tuple[str, bool]]:
     """
-    Select subtitle file from list of filenames, prioritizing manual over auto.
-    Locale-agnostic regex to catch variants like .en-US.srt, .en-GB.srt, and .vtt files.
-    Supports both SRT and VTT formats (TikTok serves VTT).
+    Pick the one English caption track to download, as (language, is_auto).
 
-    With prefer_original=True, an en-orig file wins outright. On auto-dubbed YouTube
-    videos the plain "en" auto track can be translated back from a dub; en-orig is
-    the speech recognition of the original audio. Pass it only when the video has no
-    manual English track, since en-orig is auto-generated too.
+    Order: manual English, else en-orig, else any auto English track. None when
+    the metadata lists no English track at all.
+
+    One track, not several: yt-dlp makes one request per requested track and
+    fails the whole call if any of them is rate-limited. On auto-captioned
+    YouTube videos the plain "en" auto track is a machine translation
+    (lang=xx&tlang=en; on auto-dubbed videos it comes from a dub), YouTube 429s
+    those requests, and the fetch aborted even when en-orig, the recognition of
+    the original audio, would have downloaded fine.
     """
-    # Pattern: base_name.LOCALE.[auto.]srt or base_name.LOCALE.[auto.]vtt
-    # Group 1: Locale (e.g., en, en-US), Group 2: .auto/ .auto-subs (optional)
-    pattern = re.compile(rf"^{re.escape(base_name)}\.([a-zA-Z0-9-]+)(\.auto(?:-subs)?)?\.(srt|vtt)$", re.IGNORECASE)
-    
-    manual_matches = []
-    auto_matches = []
-    
-    for f in filenames:
-        match = pattern.match(f)
-        if match:
-            if prefer_original and match.group(1).lower() == ORIGINAL_ENGLISH_SUB_LANG:
-                return f
-            is_auto = match.group(2) is not None
-            if is_auto:
-                auto_matches.append(f)
-            else:
-                manual_matches.append(f)
-    
-    # Priority 1: Manual Subtitles (often higher quality)
-    if manual_matches:
-        # Sort to ensure deterministic behavior (e.g., en before en-US if both exist)
-        manual_matches.sort()
-        return manual_matches[0]
-    
-    # Priority 2: Auto-generated Subtitles
-    if auto_matches:
-        auto_matches.sort()
-        return auto_matches[0]
-        
-    return None
+    manual = _first_english(metadata.get("subtitles"))
+    if manual:
+        return manual, False
+    auto = metadata.get("automatic_captions") or {}
+    if ORIGINAL_ENGLISH_SUB_LANG in auto:
+        return ORIGINAL_ENGLISH_SUB_LANG, True
+    auto_english = _first_english(auto)
+    return (auto_english, True) if auto_english else None
 
 def initialize_directories() -> None:
     """

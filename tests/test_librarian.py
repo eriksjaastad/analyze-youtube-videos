@@ -216,7 +216,7 @@ def test_get_video_data_success(mock_tempdir, mock_mkdir, mock_exists, mock_open
     mock_exists.return_value = True
     mock_run.side_effect = [
         # First call: metadata
-        MagicMock(returncode=0, stdout='{"title": "Test Title", "uploader": "Test Channel", "id": "123"}'),
+        MagicMock(returncode=0, stdout='{"title": "Test Title", "uploader": "Test Channel", "id": "123", "subtitles": {"en": []}}'),
         # Second call: subtitles
         MagicMock(returncode=0, stdout="", stderr="")
     ]
@@ -879,6 +879,7 @@ def test_source_audit_below_ceiling_warns_without_publishability_verdict(caplog)
 
 def _mock_get_video_data(metadata_json, url):
     """Drive get_video_data() with a canned yt-dlp metadata blob and SRT."""
+    metadata_json = json.dumps({"subtitles": {"en": []}, **json.loads(metadata_json)})
     with patch("subprocess.run") as mock_run, \
          patch("os.listdir") as mock_listdir, \
          patch("builtins.open", new_callable=MagicMock) as mock_open, \
@@ -1076,46 +1077,50 @@ def test_fetch_mode_dry_run_still_writes_fetch_cache(
     assert cached["title"] == "Test Video"
 
 
-# --- subtitle track choice on auto-dubbed videos ---------------------------------
-# On an auto-dubbed video the plain "en" auto track can be a machine translation
-# round-tripped through a dub; en-orig is recognition of the original audio.
+# --- one subtitle track per video ----------------------------------------------
+# yt-dlp makes one request per requested track and fails the call if any is
+# rate-limited. On auto-captioned videos the plain "en" auto track is a machine
+# translation that YouTube 429s, so the librarian requests exactly one track.
 
-def _fake_ytdlp(metadata, written_tracks, calls):
-    """run_with_retry stand-in: metadata on the first call, subtitle files on the second."""
+def _fake_ytdlp(metadata, available_tracks, calls):
+    """run_with_retry stand-in: metadata on the first call, then writes only the requested track."""
     def run(cmd, timeout, **kwargs):
         calls.append(cmd)
-        if "--print-json" in cmd:
+        if "--dump-json" in cmd:
             return MagicMock(returncode=0, stdout=json.dumps(metadata), stderr="")
         base = cmd[cmd.index("--output") + 1]
-        for lang, text in written_tracks.items():
-            Path(f"{base}.{lang}.srt").write_text(
-                f"1\n00:00:01,000 --> 00:00:02,000\n{text}\n", encoding="utf-8"
-            )
+        lang = cmd[cmd.index("--sub-lang") + 1]
+        Path(f"{base}.{lang}.srt").write_text(
+            f"1\n00:00:01,000 --> 00:00:02,000\n{available_tracks[lang]}\n", encoding="utf-8"
+        )
         return MagicMock(returncode=0, stdout="", stderr="")
     return run
 
 
-def test_get_video_data_prefers_en_orig_without_manual_english(tmp_path, monkeypatch):
+def test_get_video_data_requests_only_en_orig_on_auto_only_video(tmp_path, monkeypatch):
     monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
     calls = []
-    metadata = {"title": "Dubbed", "uploader": "Chan", "id": "dub1", "subtitles": {}}
+    metadata = {
+        "title": "Dubbed", "uploader": "Chan", "id": "dub1", "subtitles": {},
+        "automatic_captions": {"bn-orig": [], "en": [], "en-orig": []},
+    }
     tracks = {"en": "translated round trip", "en-orig": "original speech"}
     monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
 
     data = get_video_data("https://youtube.com/watch?v=dub1", use_whisper_fallback=False)
 
     assert "original speech" in data["transcript"]
-    assert "translated" not in data["transcript"]
-    sub_langs = calls[1][calls[1].index("--sub-lang") + 1]
-    assert sub_langs.split(",")[0] == "en-orig"
+    assert calls[1][calls[1].index("--sub-lang") + 1] == "en-orig"
+    assert "--write-auto-subs" in calls[1] and "--write-subs" not in calls[1]
 
 
-def test_get_video_data_keeps_manual_english_over_en_orig(tmp_path, monkeypatch):
+def test_get_video_data_requests_only_manual_en_when_present(tmp_path, monkeypatch):
     monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
     calls = []
     metadata = {
         "title": "Captioned", "uploader": "Chan", "id": "cap1",
-        "subtitles": {"en": [{"ext": "srt"}], "live_chat": []},
+        "subtitles": {"en": [], "live_chat": []},
+        "automatic_captions": {"en": [], "en-orig": []},
     }
     tracks = {"en": "human captions"}
     monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
@@ -1123,5 +1128,34 @@ def test_get_video_data_keeps_manual_english_over_en_orig(tmp_path, monkeypatch)
     data = get_video_data("https://youtube.com/watch?v=cap1", use_whisper_fallback=False)
 
     assert "human captions" in data["transcript"]
-    sub_langs = calls[1][calls[1].index("--sub-lang") + 1]
-    assert "en-orig" not in sub_langs.split(",")
+    assert calls[1][calls[1].index("--sub-lang") + 1] == "en"
+    assert "--write-subs" in calls[1] and "--write-auto-subs" not in calls[1]
+
+
+def test_get_video_data_skips_subtitle_request_without_english_track(tmp_path, monkeypatch):
+    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    calls = []
+    metadata = {"title": "T", "uploader": "C", "id": "fr1", "automatic_captions": {"fr-orig": []}}
+    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, {}, calls))
+
+    assert get_video_data("https://youtube.com/watch?v=fr1", use_whisper_fallback=False) is None
+    assert len(calls) == 1
+
+
+def test_get_video_data_metadata_call_asks_tiktok_for_its_captions(tmp_path, monkeypatch):
+    # yt-dlp's TikTok extractor fills "subtitles" only when the command asks to write them.
+    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    calls = []
+    listed = {"title": "T", "uploader": "h", "id": "9", "subtitles": {"eng-US": []}}
+    fake = _fake_ytdlp(listed, {"eng-US": "tiktok captions"}, calls)
+
+    def run(cmd, timeout, **kwargs):
+        if "--dump-json" in cmd and "--write-subs" not in cmd:
+            calls.append(cmd)
+            return MagicMock(returncode=0, stdout=json.dumps(dict(listed, subtitles={})), stderr="")
+        return fake(cmd, timeout)
+    monkeypatch.setattr(librarian, "run_with_retry", run)
+
+    data = get_video_data("https://www.tiktok.com/@h/video/9", use_whisper_fallback=False)
+
+    assert "tiktok captions" in data["transcript"]
