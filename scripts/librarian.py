@@ -384,14 +384,13 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
         try:
             logger.info(f"[*] Fetching metadata for: {url}")
 
-            # --dump-json simulates, so nothing downloads. The subtitle flags make
-            # extractors that list captions only on request (TikTok) include them
-            # in the metadata, which choose_subtitle_track reads.
+            # --dump-json simulates, so nothing downloads. --write-subs makes the
+            # TikTok extractor, which lists captions only on request, include them
+            # in the metadata that choose_subtitle_track reads.
             cmd_info = [
                 "yt-dlp",
                 "--dump-json",
                 "--write-subs",
-                "--write-auto-subs",
                 url
             ]
             result = run_with_retry(cmd_info, timeout=60)

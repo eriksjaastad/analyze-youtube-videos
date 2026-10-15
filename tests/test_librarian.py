@@ -1140,3 +1140,22 @@ def test_get_video_data_skips_subtitle_request_without_english_track(tmp_path, m
 
     assert get_video_data("https://youtube.com/watch?v=fr1", use_whisper_fallback=False) is None
     assert len(calls) == 1
+
+
+def test_get_video_data_metadata_call_asks_tiktok_for_its_captions(tmp_path, monkeypatch):
+    # yt-dlp's TikTok extractor fills "subtitles" only when the command asks to write them.
+    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    calls = []
+    listed = {"title": "T", "uploader": "h", "id": "9", "subtitles": {"eng-US": []}}
+    fake = _fake_ytdlp(listed, {"eng-US": "tiktok captions"}, calls)
+
+    def run(cmd, timeout, **kwargs):
+        if "--dump-json" in cmd and "--write-subs" not in cmd:
+            calls.append(cmd)
+            return MagicMock(returncode=0, stdout=json.dumps(dict(listed, subtitles={})), stderr="")
+        return fake(cmd, timeout)
+    monkeypatch.setattr(librarian, "run_with_retry", run)
+
+    data = get_video_data("https://www.tiktok.com/@h/video/9", use_whisper_fallback=False)
+
+    assert "tiktok captions" in data["transcript"]
