@@ -1,10 +1,11 @@
 """429 fail-fast and save-without-network coverage for the librarian.
 
-Every test mocks subprocess.run / run_with_retry; none of them touch the
-network or invoke a real yt-dlp binary.
+Every test mocks subprocess.run; none of them touch the network or invoke a
+real yt-dlp binary.
 """
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -35,30 +36,32 @@ def test_is_rate_limited_rejects_other_stderr(stderr):
     assert librarian.is_rate_limited(stderr) is False
 
 
-# --- run_with_retry ----------------------------------------------------------
+# --- _yt_dlp ------------------------------------------------------------------
 
-@patch("scripts.librarian.time.sleep")
 @patch("subprocess.run")
-def test_run_with_retry_fails_fast_on_429(mock_run, mock_sleep):
+def test_yt_dlp_fails_fast_on_429(mock_run):
     mock_run.return_value = _completed(1, stderr="ERROR: HTTP Error 429: Too Many Requests")
 
-    result = librarian.run_with_retry(["yt-dlp"], timeout=60)
+    with pytest.raises(librarian.RateLimitedError):
+        librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
-    assert result.returncode == 1
     assert mock_run.call_count == 1
-    mock_sleep.assert_not_called()
 
 
-@patch("scripts.librarian.time.sleep")
 @patch("subprocess.run")
-def test_run_with_retry_still_retries_non_rate_limited_failures(mock_run, mock_sleep):
+def test_yt_dlp_runs_a_failed_call_once(mock_run):
     mock_run.return_value = _completed(1, stderr="generic failure")
 
-    result = librarian.run_with_retry(["yt-dlp"], timeout=60)
+    with pytest.raises(librarian.YtDlpError, match="generic failure"):
+        librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
-    assert mock_run.call_count == 3
-    assert mock_sleep.call_count == 2
-    assert result.returncode == 1
+    assert mock_run.call_count == 1
+
+
+@pytest.mark.parametrize("error", [subprocess.TimeoutExpired("yt-dlp", 60), FileNotFoundError("yt-dlp")])
+def test_yt_dlp_that_cannot_complete_is_a_yt_dlp_error(error):
+    with patch("subprocess.run", side_effect=error), pytest.raises(librarian.YtDlpError):
+        librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
 
 # --- download_audio rate limiting ---------------------------------------------
@@ -73,69 +76,44 @@ def test_download_audio_raises_rate_limited_error_on_429_stderr(mock_run):
 
 # --- get_video_data rate limiting --------------------------------------------
 
-@patch("scripts.librarian.run_with_retry")
-@patch("tempfile.TemporaryDirectory")
-def test_get_video_data_raises_on_metadata_429(mock_tempdir, mock_run):
-    mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
-    mock_run.return_value = _completed(1, stderr="HTTP Error 429: Too Many Requests")
+AUTO_ONLY = {"title": "T", "uploader": "C", "id": "v", "automatic_captions": {"en-orig": []}}
+RATE_LIMITED = "ERROR: HTTP Error 429: Too Many Requests"
+
+
+def test_get_video_data_raises_on_metadata_429(fake_ytdlp):
+    fake_ytdlp(AUTO_ONLY, fail={"--dump-json": RATE_LIMITED})
 
     with pytest.raises(librarian.RateLimitedError):
         librarian.get_video_data("https://youtube.com/watch?v=fail")
 
 
-@patch("scripts.librarian.download_audio")
-@patch("scripts.librarian.run_with_retry")
-@patch("tempfile.TemporaryDirectory")
-def test_get_video_data_raises_on_subtitle_429_and_never_downloads_audio(
-    mock_tempdir, mock_run, mock_download_audio
-):
-    mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
-    mock_run.side_effect = [
-        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v", "automatic_captions": {"en-orig": []}})),
-        _completed(1, stderr="ERROR: Too Many Requests"),
-    ]
+def test_get_video_data_raises_on_subtitle_429_and_never_downloads_audio(fake_ytdlp):
+    calls = fake_ytdlp(AUTO_ONLY, fail={"--sub-lang": RATE_LIMITED})
 
     with pytest.raises(librarian.RateLimitedError):
         librarian.get_video_data("https://youtube.com/watch?v=v")
 
-    mock_download_audio.assert_not_called()
+    assert not any("--extract-audio" in cmd for cmd in calls)
 
 
 @patch("scripts.librarian.transcribe_with_whisper")
-@patch("subprocess.run")
-@patch("scripts.librarian.run_with_retry")
-@patch("tempfile.TemporaryDirectory")
-@patch("os.listdir")
-def test_get_video_data_whisper_fallback_audio_429_propagates(
-    mock_listdir, mock_tempdir, mock_run, mock_subprocess_run, mock_transcribe
-):
-    mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
-    mock_listdir.return_value = []
-    mock_run.side_effect = [
-        _completed(0, stdout=json.dumps({"title": "T", "uploader": "C", "id": "v", "automatic_captions": {"en-orig": []}})),
-        _completed(0),  # subtitle call succeeds but writes no subtitle files
-    ]
-    mock_subprocess_run.return_value = _completed(1, stderr="HTTP Error 429: Too Many Requests")
+def test_get_video_data_whisper_fallback_audio_429_propagates(mock_transcribe, fake_ytdlp):
+    # The subtitle call succeeds but writes no file, so the fetch falls back to audio.
+    calls = fake_ytdlp(AUTO_ONLY, tracks={}, fail={"--extract-audio": RATE_LIMITED})
 
     with pytest.raises(librarian.RateLimitedError):
         librarian.get_video_data("https://youtube.com/watch?v=v")
 
-    mock_subprocess_run.assert_called_once()
+    assert "--extract-audio" in calls[-1]
     mock_transcribe.assert_not_called()
 
 
-@patch("scripts.librarian.run_with_retry")
-@patch("tempfile.TemporaryDirectory")
-def test_metadata_only_makes_one_call_and_returns_empty_transcript(mock_tempdir, mock_run):
-    mock_tempdir.return_value.__enter__.return_value = "/tmp/fake"
-    mock_run.return_value = _completed(
-        0,
-        stdout=json.dumps({"title": "T", "uploader": "C", "id": "v", "view_count": 5}),
-    )
+def test_metadata_only_makes_one_call_and_returns_empty_transcript(fake_ytdlp):
+    calls = fake_ytdlp({"title": "T", "uploader": "C", "id": "v", "view_count": 5})
 
     data = librarian.get_video_data("https://youtube.com/watch?v=v", metadata_only=True)
 
-    assert mock_run.call_count == 1
+    assert len(calls) == 1
     assert data["transcript"] == ""
     assert data["title"] == "T"
     assert data["video_id"] == "v"
@@ -330,6 +308,19 @@ def test_batch_stops_immediately_on_rate_limited_video(tmp_path, monkeypatch):
     assert exc_info.value.code == 1
     assert process.call_count == 2
     assert process.call_args_list[1].args[0] == "https://youtu.be/b"
+
+
+def test_batch_profile_list_429_propagates_before_any_video(monkeypatch, fake_ytdlp):
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    fake_ytdlp({}, fail={"--flat-playlist": "ERROR: HTTP Error 429: Too Many Requests\nERROR: giving up"})
+    process = MagicMock()
+    monkeypatch.setattr(librarian, "process_single_video", process)
+    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "https://youtube.com/@creator"])
+
+    with pytest.raises(librarian.RateLimitedError, match="HTTP Error 429"):
+        librarian.main()
+
+    process.assert_not_called()
 
 
 def test_main_single_video_rate_limited_exits_1(monkeypatch):

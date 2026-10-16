@@ -95,7 +95,6 @@ import re
 import shutil
 import yaml
 import time
-import random
 import unicodedata
 from datetime import date, datetime
 from pathlib import Path
@@ -109,6 +108,10 @@ FETCH_CACHE_DIR = Path(os.getenv("FETCH_CACHE_DIR", "data/fetch_cache"))
 
 class RateLimitedError(RuntimeError):
     """YouTube answered HTTP 429; retrying would only make the rate limit worse."""
+
+
+class YtDlpError(RuntimeError):
+    """A yt-dlp call failed: non-zero exit, timeout, or yt-dlp missing from PATH."""
 
 
 class FlaggedChannelsConfigError(RuntimeError):
@@ -127,58 +130,25 @@ def is_rate_limited(stderr: str) -> bool:
     return "http error 429" in lowered or "too many requests" in lowered
 
 
-def run_with_retry(cmd: List[str], timeout: int, max_retries: int = 3, base_delay: float = 2.0) -> Optional[subprocess.CompletedProcess]:
+def _yt_dlp(args: List[str], timeout: int) -> str:
+    """Run yt-dlp once with args and return its stdout.
+
+    Raises RateLimitedError on HTTP 429 and YtDlpError on any other failure.
+    There is no outer retry: yt-dlp already retries transient network errors
+    itself (--retries, --extractor-retries), and re-running a failed call only
+    multiplies the YouTube requests that the rate limit counts.
     """
-    Runs a subprocess command with exponential backoff retry logic.
+    try:
+        result = subprocess.run(["yt-dlp", *args], capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        raise YtDlpError(f"yt-dlp did not complete: {e}") from e
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        if is_rate_limited(stderr):
+            raise RateLimitedError(stderr)
+        raise YtDlpError(f"yt-dlp exited {result.returncode}: {stderr}")
+    return result.stdout
 
-    Args:
-        cmd: Command to run as list of strings
-        timeout: Timeout in seconds for each attempt
-        max_retries: Maximum number of retry attempts (default: 3)
-        base_delay: Base delay in seconds for exponential backoff (default: 2.0)
-
-    Returns:
-        subprocess.CompletedProcess on success, None on exhaustion
-    """
-    for attempt in range(max_retries):
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-
-            # Success - return immediately
-            if result.returncode == 0:
-                return result
-
-            # Non-zero return code - fail fast on rate limits, retry others
-            if is_rate_limited(result.stderr or ""):
-                logger.error("YouTube rate limit (HTTP 429) — not retrying; wait before fetching again")
-                return result
-
-            if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(f"Command failed (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
-                time.sleep(delay)
-            else:
-                logger.error(f"Command failed after {max_retries} attempts")
-                return result  # Return the failed result for error handling
-
-        except subprocess.TimeoutExpired:  # governance: allow-silent SF002: None is run_with_retry's documented exhaustion result; every caller treats None as failure (get_video_data returns None -> process_single_video False -> exit 1; profile fetch -> 'No videos found' exit 1)
-            if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                logger.warning(f"Command timed out (attempt {attempt + 1}/{max_retries}), retrying in {delay:.1f}s...")
-                time.sleep(delay)
-            else:
-                logger.error(f"Command timed out after {max_retries} attempts")
-                return None
-
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user")
-            raise
-
-        except FileNotFoundError:  # governance: allow-silent SF002: yt-dlp missing returns the documented None failure result; every caller treats None as a failed command and the CLI exits 1
-            logger.error(f"Command not found: {cmd[0]}")
-            return None
-
-    return None
 
 def atomic_write(path: Path, content: str) -> None:
     """Atomic write using a temp file and rename pattern."""
@@ -217,43 +187,20 @@ def clean_srt(srt_content: str) -> str:
     return text
 
 def download_audio(url: str, temp_dir: Path) -> Optional[Path]:
-    """
-    Downloads audio from a YouTube video using yt-dlp.
-    Returns path to the downloaded MP3 file, or None on failure.
-    """
+    """Download the video's audio as MP3 into temp_dir for Whisper; None on failure."""
+    audio_path = temp_dir / "audio.mp3"
+    logger.info("[*] Downloading audio for Whisper transcription...")
     try:
-        audio_path = temp_dir / "audio.mp3"
-        logger.info("[*] Downloading audio for Whisper transcription...")
-
-        cmd = [
-            "yt-dlp",
-            "--extract-audio",
-            "--audio-format", "mp3",
-            "--output", str(audio_path.with_suffix('')),  # yt-dlp adds .mp3
-            url
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            if is_rate_limited(result.stderr or ""):
-                raise RateLimitedError(f"YouTube rate-limited the audio download for {url}")
-            logger.error(f"Audio download failed: {result.stderr}")
-            return None
-
-        if audio_path.exists():
-            return audio_path
-        else:
-            logger.error(f"Audio file not found at {audio_path}")
-            return None
-
-    except RateLimitedError:
-        raise
-    except subprocess.TimeoutExpired:  # governance: allow-silent SF002: None is download_audio's failure result; get_video_data logs 'Audio download failed' and, with no transcript, returns None so the CLI exits 1
-        logger.error("Audio download timed out after 300 seconds")
+        # yt-dlp adds the .mp3 extension itself.
+        _yt_dlp(["--extract-audio", "--audio-format", "mp3",
+                 "--output", str(audio_path.with_suffix("")), url], timeout=300)
+    except YtDlpError as e:  # governance: allow-silent SF002: None is download_audio's failure result; with no caption track either, _fetch_transcript returns None and the CLI exits 1
+        logger.error(f"Audio download failed: {e}")
         return None
-    except Exception as e:  # governance: allow-silent SF002: None is download_audio's failure result; get_video_data logs 'Audio download failed' and, with no transcript, returns None so the CLI exits 1
-        logger.error(f"Error downloading audio: {e}")
+    if not audio_path.exists():
+        logger.error(f"Audio file not found at {audio_path}")
         return None
+    return audio_path
 
 def extract_chapters(metadata: Dict[str, Any]) -> List[Dict[str, str]]:
     """
@@ -370,150 +317,110 @@ def _instagram_handle(metadata: Dict[str, Any]) -> str:
 
 
 def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: bool = False) -> Optional[Dict[str, Any]]:
-    """
-    Uses yt-dlp to fetch video metadata and SRT transcript.
-    Prioritizes manual subtitles over auto-generated ones.
-    Uses tempfile.TemporaryDirectory for safe, automatic cleanup.
+    """Fetch one video's metadata and transcript as the librarian's video dict.
 
-    With metadata_only=True, only the --dump-json metadata call runs and the
-    returned dict carries an empty transcript — no subtitle, audio, or Whisper.
+    Returns None when the metadata call fails or no transcript source works.
+    RateLimitedError propagates so the caller stops instead of fetching more.
+    With metadata_only=True only the metadata call runs and the transcript is
+    empty: no subtitle, audio, or Whisper.
     """
+    logger.info(f"[*] Fetching metadata for: {url}")
+    try:
+        # --dump-json simulates, so nothing downloads. --write-subs makes the
+        # TikTok extractor, which lists captions only on request, include them
+        # in the metadata that choose_subtitle_track reads.
+        metadata = json.loads(_yt_dlp(["--dump-json", "--write-subs", url], timeout=60))
+    except (YtDlpError, json.JSONDecodeError) as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
+        logger.error(f"Error fetching metadata: {e}")
+        return None
+    transcript = "" if metadata_only else _fetch_transcript(url, metadata, use_whisper_fallback)
+    if transcript is None:
+        return None
+    return _video_fields(metadata, url, transcript)
+
+
+def _fetch_transcript(url: str, metadata: Dict[str, Any], use_whisper_fallback: bool) -> Optional[str]:
+    """The cleaned caption track the metadata lists, else a Whisper transcript, else None."""
     with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="transcript_") as temp_dir:
-        unique_temp = Path(temp_dir)
-        
-        try:
-            logger.info(f"[*] Fetching metadata for: {url}")
+        work_dir = Path(temp_dir)
+        track = choose_subtitle_track(metadata)
+        if track:
+            sub_lang, is_auto = track
+            logger.info(f"[*] Fetching {'auto' if is_auto else 'manual'} subtitle track {sub_lang}...")
+            try:
+                _yt_dlp([
+                    "--skip-download",
+                    "--write-auto-subs" if is_auto else "--write-subs",
+                    "--sub-lang", sub_lang,
+                    "--sub-format", "srt/vtt/best",
+                    "--output", str(work_dir / "transcript"),
+                    url,
+                ], timeout=120)
+            except YtDlpError as e:  # governance: allow-silent SF002: a failed subtitle call falls through to the Whisper fallback; with no transcript at all this returns None and the CLI exits 1
+                logger.warning(f"Subtitle fetch failed for {url}: {e}")
+            sub_file = next((f for f in sorted(work_dir.iterdir()) if f.suffix in (".srt", ".vtt")), None)
+            if sub_file:
+                logger.info(f"[*] Using subtitle track {sub_file.name}")
+                return clean_srt(sub_file.read_text(encoding="utf-8"))
+        else:
+            logger.warning("Metadata lists no English subtitle track.")
+        logger.warning("No SRT transcript found.")
 
-            # --dump-json simulates, so nothing downloads. --write-subs makes the
-            # TikTok extractor, which lists captions only on request, include them
-            # in the metadata that choose_subtitle_track reads.
-            cmd_info = [
-                "yt-dlp",
-                "--dump-json",
-                "--write-subs",
-                url
-            ]
-            result = run_with_retry(cmd_info, timeout=60)
-            if result is None or result.returncode != 0:
-                if result is not None and is_rate_limited(result.stderr or ""):
-                    raise RateLimitedError(f"YouTube rate-limited the metadata request for {url}")
-                error_msg = result.stderr if result else "Command failed after retries"
-                logger.error(f"Error fetching metadata: {error_msg}")
-                return None
-
-            metadata = json.loads(result.stdout)
-
-            transcript = ""
-            if not metadata_only:
-                target_file = None
-                track = choose_subtitle_track(metadata)
-                if track:
-                    sub_lang, is_auto = track
-                    logger.info(f"[*] Fetching {'auto' if is_auto else 'manual'} subtitle track {sub_lang}...")
-                    cmd_subs = [
-                        "yt-dlp",
-                        "--skip-download",
-                        "--write-auto-subs" if is_auto else "--write-subs",
-                        "--sub-lang", sub_lang,
-                        "--sub-format", "srt/vtt/best",
-                        "--output", str(unique_temp / "transcript"),
-                        url
-                    ]
-                    sub_result = run_with_retry(cmd_subs, timeout=120)
-                    if sub_result is None or sub_result.returncode != 0:
-                        if sub_result is not None and is_rate_limited(sub_result.stderr or ""):
-                            raise RateLimitedError(f"YouTube rate-limited the subtitle request for {url}")
-                        error_msg = sub_result.stderr if sub_result else "Command failed after retries"
-                        logger.warning(f"Subtitle fetch command failed for {url}.")
-                        logger.debug(f"Stderr: {error_msg}")
-
-                    target_file = next(
-                        (f for f in sorted(os.listdir(unique_temp)) if f.endswith(('.srt', '.vtt'))), None
-                    )
-                else:
-                    logger.warning("Metadata lists no English subtitle track.")
-
-                if target_file:
-                    logger.info(f"[*] Using subtitle track {target_file}")
-                    target_path = unique_temp / target_file
-                    with open(target_path, 'r', encoding='utf-8') as f:
-                        srt_content = f.read()
-                        transcript = clean_srt(srt_content)
-                else:
-                    logger.warning("No SRT transcript found.")
-
-                    # Try Whisper fallback if enabled
-                    if use_whisper_fallback:
-                        logger.info("[*] Attempting Whisper fallback...")
-                        audio_path = download_audio(url, unique_temp)
-                        if audio_path:
-                            whisper_transcript = transcribe_with_whisper(audio_path)
-                            if whisper_transcript:
-                                transcript = whisper_transcript
-                                logger.info("[+] Using Whisper-generated transcript")
-                            else:
-                                logger.error("Whisper transcription failed")
-                        else:
-                            logger.error("Audio download failed")
-
-                    # If both SRT and Whisper failed, return None
-                    if not transcript:
-                        logger.error("No transcript available (SRT and Whisper both failed)")
-                        return None
-
-            # Extract chapters if available
-            chapters = extract_chapters(metadata)
-
-            # Detect platform from URL or extractor
-            extractor = metadata.get("extractor_key", "").lower()
-            channel_id = metadata.get("channel_id") or ""
-            if "tiktok" in extractor or "tiktok.com" in url:
-                platform = "tiktok"
-                # TikTok: 'channel' is display name, 'uploader' is handle
-                channel = metadata.get("channel") or metadata.get("uploader") or "Unknown_Channel"
-                uploader_id = metadata.get("uploader_id") or ""
-            elif "instagram" in extractor or "instagram.com" in url:
-                platform = "instagram"
-                # Instagram inverts the TikTok convention: 'uploader' is the
-                # display name, 'channel' is the @handle, and 'uploader_id' is
-                # the numeric owner ID. Keep the handle and stable ID separate
-                # for check_flagged_channel().
-                channel = metadata.get("uploader") or metadata.get("channel") or "Unknown_Channel"
-                uploader_id = _instagram_handle(metadata)
-                # Preserve the numeric owner ID separately for stable-ID watchlists.
-                owner_id = str(metadata.get("uploader_id") or "")
-                if not channel_id and owner_id.isdecimal():
-                    channel_id = owner_id
-            else:
-                platform = "youtube"
-                channel = metadata.get("uploader") or "Unknown_Channel"
-                uploader_id = metadata.get("uploader_id") or ""
-
-            return {
-                "title": metadata.get("title") or "Untitled",
-                "channel": channel,
-                "channel_id": channel_id,
-                "uploader_id": uploader_id,
-                "date": metadata.get("upload_date"),
-                "url": url,
-                "video_id": metadata.get("id") or "unknown",
-                "description": metadata.get("description") or "",
-                "transcript": transcript,
-                "tags": metadata.get("tags", []) or [],
-                "view_count": metadata.get("view_count") or 0,
-                "like_count": metadata.get("like_count") or 0,
-                "duration_string": metadata.get("duration_string") or "0:00",
-                "chapters": chapters,
-                "platform": platform
-            }
-        except RateLimitedError:
-            raise
-        except subprocess.TimeoutExpired as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
-            logger.error(f"Subprocess timed out: {e}")
+        transcript = None
+        if use_whisper_fallback:
+            logger.info("[*] Attempting Whisper fallback...")
+            audio_path = download_audio(url, work_dir)
+            transcript = transcribe_with_whisper(audio_path) if audio_path else None
+        if not transcript:
+            logger.error("No transcript available (SRT and Whisper both failed)")
             return None
-        except Exception as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
-            logger.error(f"Unexpected error in get_video_data: {e}")
-            return None
+        logger.info("[+] Using Whisper-generated transcript")
+        return transcript
+
+
+def _video_fields(metadata: Dict[str, Any], url: str, transcript: str) -> Dict[str, Any]:
+    """Map yt-dlp metadata to the librarian's video dict, per platform."""
+    extractor = metadata.get("extractor_key", "").lower()
+    channel_id = metadata.get("channel_id") or ""
+    if "tiktok" in extractor or "tiktok.com" in url:
+        platform = "tiktok"
+        # TikTok: 'channel' is display name, 'uploader' is handle
+        channel = metadata.get("channel") or metadata.get("uploader") or "Unknown_Channel"
+        uploader_id = metadata.get("uploader_id") or ""
+    elif "instagram" in extractor or "instagram.com" in url:
+        platform = "instagram"
+        # Instagram inverts the TikTok convention: 'uploader' is the
+        # display name, 'channel' is the @handle, and 'uploader_id' is
+        # the numeric owner ID. Keep the handle and stable ID separate
+        # for check_flagged_channel().
+        channel = metadata.get("uploader") or metadata.get("channel") or "Unknown_Channel"
+        uploader_id = _instagram_handle(metadata)
+        # Preserve the numeric owner ID separately for stable-ID watchlists.
+        owner_id = str(metadata.get("uploader_id") or "")
+        if not channel_id and owner_id.isdecimal():
+            channel_id = owner_id
+    else:
+        platform = "youtube"
+        channel = metadata.get("uploader") or "Unknown_Channel"
+        uploader_id = metadata.get("uploader_id") or ""
+
+    return {
+        "title": metadata.get("title") or "Untitled",
+        "channel": channel,
+        "channel_id": channel_id,
+        "uploader_id": uploader_id,
+        "date": metadata.get("upload_date"),
+        "url": url,
+        "video_id": metadata.get("id") or "unknown",
+        "description": metadata.get("description") or "",
+        "transcript": transcript,
+        "tags": metadata.get("tags", []) or [],
+        "view_count": metadata.get("view_count") or 0,
+        "like_count": metadata.get("like_count") or 0,
+        "duration_string": metadata.get("duration_string") or "0:00",
+        "chapters": extract_chapters(metadata),
+        "platform": platform
+    }
 
 
 def _fill_save_data_defaults(data: Dict[str, Any]) -> None:
@@ -1010,18 +917,13 @@ def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> Lis
     Returns list of video URLs, optionally limited.
     """
     logger.info(f"[*] Fetching video list from profile: {profile_url}")
-    cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "--print", "%(webpage_url)s",
-        profile_url
-    ]
-    result = run_with_retry(cmd, timeout=60)
-    if result is None or result.returncode != 0:
-        logger.error("Failed to fetch profile video list.")
+    try:
+        output = _yt_dlp(["--flat-playlist", "--print", "%(webpage_url)s", profile_url], timeout=60)
+    except YtDlpError as e:  # governance: allow-silent SF002: [] is the profile fetch's failure result; main() logs 'No videos found on profile.' and exits 1
+        logger.error(f"Failed to fetch profile video list: {e}")
         return []
 
-    urls = [u.strip() for u in result.stdout.strip().splitlines() if u.strip()]
+    urls = [u.strip() for u in output.strip().splitlines() if u.strip()]
     logger.info(f"[+] Found {len(urls)} videos on profile")
 
     if limit:
