@@ -13,7 +13,8 @@ Video analysis pipeline for extracting insights from YouTube and TikTok content.
 
 That's it. No external LLMs, no API keys, no extra steps.
 
-Usage, flags and dependencies live in `uv run --with pyyaml scripts/librarian.py --help`.
+Usage, flags and dependencies live in `uv run scripts/librarian.py --help`; dependencies are
+declared in `pyproject.toml`.
 
 ### Collections
 
@@ -49,7 +50,7 @@ per video.
 ### Supported Platforms
 
 YouTube, TikTok, and Instagram (posts/reels) are supported; the authoritative
-list and full flag reference live in `uv run --with pyyaml scripts/librarian.py --help`.
+list and full flag reference live in `uv run scripts/librarian.py --help`.
 
 ### Analysis Modes
 - **Standard analysis** — video overview, key concepts, actionable takeaways, critical assessment
@@ -70,12 +71,11 @@ external factual claims.
 ```
 analyze-youtube-videos/
 ├── scripts/
-│   ├── librarian.py       ← Transcript fetching, cleaning, library management
-│   └── config.py          ← Shared config, env, utilities
+│   └── librarian.py       ← Transcript fetching, cleaning, library management
 ├── library/               ← Individual video reports
 │   └── index.yaml         ← Record of what has been analyzed
 ├── config/
-│   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
+│   ├── replacements.yaml      ← Caption mis-hearing fixes, applied at fetch
 │   └── flagged_channels.yaml  ← Watchlist of low-trust sources (see below)
 ├── data/
 │   └── fetch_cache/       ← Gitignored; written by fetch mode
@@ -197,14 +197,13 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
-| `config.py` | Shared config: paths, logging, the one-caption-track choice, replacements |
 
 ---
 
 ## Testing
 
 ```bash
-uv run --with pyyaml==6.0.3 --with pytest==9.0.2 pytest -q
+uv run pytest -q
 ```
 
 Tests mock every yt-dlp call. The runtime uses the Homebrew `yt-dlp` on PATH, deliberately unpinned

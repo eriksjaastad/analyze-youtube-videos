@@ -131,14 +131,10 @@ SAVE_DATA = {
 
 @pytest.fixture
 def save_env(tmp_path, monkeypatch):
-    """Isolated library + config, CWD moved so save_to_library/add_to_index work."""
+    """Isolated library, CWD moved so save_to_library/add_to_index work."""
     library_root = tmp_path / "library"
     library_root.mkdir()
     monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
-
-    config_root = tmp_path / "config"
-    config_root.mkdir()
-    (config_root / "replacements.yaml").write_text("replacements: []\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
 
@@ -294,7 +290,6 @@ def test_fetch_mode_writes_printed_json_to_cache(
 # --- CLI -------------------------------------------------------------
 
 def test_main_single_video_rate_limited_exits_1(monkeypatch):
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
     process = MagicMock(side_effect=librarian.RateLimitedError("HTTP Error 429"))
     monkeypatch.setattr(librarian, "process_single_video", process)
     monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
@@ -332,7 +327,6 @@ def test_save_with_broken_watchlist_raises_before_writing_anything(
 
 
 def test_main_single_video_broken_watchlist_exits_1(monkeypatch, caplog):
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
     process = MagicMock(side_effect=librarian.FlaggedChannelsConfigError("watchlist broken"))
     monkeypatch.setattr(librarian, "process_single_video", process)
     monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
