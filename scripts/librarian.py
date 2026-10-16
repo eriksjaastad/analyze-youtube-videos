@@ -768,7 +768,8 @@ def add_to_index(index_data: Dict[str, Any], entry_data: Dict[str, Any]) -> None
         logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
         return
     index_data["entries"].append(entry_data)
-    index_data["entries"].sort(key=lambda x: x.get("date", ""), reverse=True)
+    # str(): older entries may hold a YAML date or null, which can't be compared with a string.
+    index_data["entries"].sort(key=lambda x: str(x.get("date") or ""), reverse=True)
     index_yaml_path = LIBRARY_DIR / "index.yaml"
     atomic_write(index_yaml_path, yaml.safe_dump(index_data, allow_unicode=True, sort_keys=False))
     logger.info(f"Updated index at {index_yaml_path}")

@@ -245,6 +245,14 @@ def test_broken_index_fails_the_save_before_any_report_is_written(mock_flag, bro
     assert not list(save_env.library_root.glob("*.md"))
 
 
+def test_add_to_index_sorts_entries_with_mixed_date_types(save_env):
+    index = {"entries": [{"url": "a", "date": librarian.date(2026, 1, 2)}, {"url": "b", "date": None}]}
+
+    librarian.add_to_index(index, {"title": "T", "url": "c", "date": "2026-10-16"})
+
+    assert [entry["url"] for entry in index["entries"]] == ["c", "a", "b"]
+
+
 # --- fetch cache write -------------------------------------------------------
 
 @patch("scripts.librarian.check_flagged_channel", return_value=None)
