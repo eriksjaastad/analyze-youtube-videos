@@ -21,9 +21,6 @@ uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..."
 
 # Save a pre-written analysis to the library
 uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
-
-# Batch fetch from a profile (YouTube/TikTok only)
-uv run --with pyyaml scripts/librarian.py --batch-profile "https://tiktok.com/@creator" --limit 10
 ```
 
 The Whisper fallback (on by default, and always needed for Instagram, which has
@@ -90,11 +87,9 @@ analyze-youtube-videos/
 │   ├── librarian.py       ← Transcript fetching, cleaning, library management
 │   └── config.py          ← Shared config, env, utilities
 ├── library/               ← Individual video reports
-│   ├── index.yaml         ← Source of truth
-│   └── 00_Index_Library.md
+│   └── index.yaml         ← Record of what has been analyzed
 ├── config/
 │   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
-│   ├── categories.yaml        ← Category keywords (required by save)
 │   └── flagged_channels.yaml  ← Watchlist of low-trust sources (see below)
 ├── data/
 │   └── fetch_cache/       ← Gitignored; written by fetch mode

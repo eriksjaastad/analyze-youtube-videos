@@ -56,7 +56,7 @@ uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-f
 ### What Gets Created
 
 - **Fetch** prints metadata + transcript JSON to stdout and caches it under `data/fetch_cache/`
-- **Save** writes the report to `library/` and updates `library/index.yaml` and `library/00_Index_Library.md`
+- **Save** writes the report to `library/` and adds it to `library/index.yaml`
 - The librarian never analyzes — Claude writes the analysis
 
 ### Related Files
