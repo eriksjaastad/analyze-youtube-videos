@@ -13,21 +13,8 @@ Video analysis pipeline for extracting insights from YouTube and TikTok content.
 
 That's it. No external LLMs, no API keys, no extra steps.
 
-### Quick Reference
-
-```bash
-# Fetch transcript data (prints JSON to stdout)
-uv run scripts/librarian.py "https://youtube.com/watch?v=..."
-
-# Save a pre-written analysis to the library
-uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
-```
-
-The Whisper fallback (on by default, and always needed for Instagram, which has
-no captions) needs the whisper extra, `uv run --extra whisper scripts/librarian.py ...`,
-or pass `--no-whisper` to skip it. Dependencies are declared in `pyproject.toml`.
-
-Full flag reference lives in `uv run scripts/librarian.py --help`.
+Usage, flags and dependencies live in `uv run scripts/librarian.py --help`; dependencies are
+declared in `pyproject.toml`.
 
 ### Collections
 

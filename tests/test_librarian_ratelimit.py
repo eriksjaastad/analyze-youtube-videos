@@ -131,7 +131,7 @@ SAVE_DATA = {
 
 @pytest.fixture
 def save_env(tmp_path, monkeypatch):
-    """Isolated library, CWD moved so save_to_library/update_index work."""
+    """Isolated library, CWD moved so save_to_library/add_to_index work."""
     library_root = tmp_path / "library"
     library_root.mkdir()
     monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
@@ -226,14 +226,19 @@ def test_save_without_cache_falls_back_to_metadata_only_get_video_data(
     mock_flag.assert_called_once()
 
 
-def test_malformed_index_raises_instead_of_being_replaced(save_env):
+@pytest.mark.parametrize("broken", ["entries: [unclosed\n", "", "null\n", "[]\n", "entries: oops\n"])
+@patch("scripts.librarian.check_flagged_channel", return_value=None)
+def test_broken_index_fails_the_save_before_any_report_is_written(mock_flag, broken, save_env):
     index = save_env.library_root / "index.yaml"
-    index.write_text("entries: [unclosed\n", encoding="utf-8")
+    index.write_text(broken, encoding="utf-8")
+    data_path = save_env.tmp_path / "fetch.json"
+    data_path.write_text(json.dumps(SAVE_DATA), encoding="utf-8")
 
-    with pytest.raises(librarian.yaml.YAMLError):
-        librarian.update_index({"title": "T", "url": "https://youtu.be/new", "date": "2026-10-16"})
+    with pytest.raises((librarian.yaml.YAMLError, ValueError)):
+        librarian.process_single_video(SAVE_DATA["url"], _save_args(save_env.analysis, data_file=str(data_path)))
 
-    assert index.read_text(encoding="utf-8") == "entries: [unclosed\n"
+    assert index.read_text(encoding="utf-8") == broken
+    assert not list(save_env.library_root.glob("*.md"))
 
 
 # --- fetch cache write -------------------------------------------------------
