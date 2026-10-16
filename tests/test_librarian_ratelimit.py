@@ -310,6 +310,19 @@ def test_batch_stops_immediately_on_rate_limited_video(tmp_path, monkeypatch):
     assert process.call_args_list[1].args[0] == "https://youtu.be/b"
 
 
+def test_batch_profile_list_429_propagates_before_any_video(monkeypatch, fake_ytdlp):
+    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
+    fake_ytdlp({}, fail={"--flat-playlist": "ERROR: HTTP Error 429: Too Many Requests\nERROR: giving up"})
+    process = MagicMock()
+    monkeypatch.setattr(librarian, "process_single_video", process)
+    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "https://youtube.com/@creator"])
+
+    with pytest.raises(librarian.RateLimitedError, match="HTTP Error 429"):
+        librarian.main()
+
+    process.assert_not_called()
+
+
 def test_main_single_video_rate_limited_exits_1(monkeypatch):
     monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
     process = MagicMock(side_effect=librarian.RateLimitedError("HTTP Error 429"))

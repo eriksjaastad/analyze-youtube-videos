@@ -145,7 +145,7 @@ def _yt_dlp(args: List[str], timeout: int) -> str:
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         if is_rate_limited(stderr):
-            raise RateLimitedError(stderr.splitlines()[-1])
+            raise RateLimitedError(stderr)
         raise YtDlpError(f"yt-dlp exited {result.returncode}: {stderr}")
     return result.stdout
 
