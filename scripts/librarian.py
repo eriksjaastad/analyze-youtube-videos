@@ -744,23 +744,31 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     logger.info(f"[+] Saved to: {filepath}")
     return filepath
 
-def update_index(entry_data: Dict[str, Any]) -> None:
-    """Add one report to library/index.yaml, the record of what has been analyzed.
+def load_index() -> Dict[str, Any]:
+    """library/index.yaml, the record of what has been analyzed; empty when none exists yet.
 
-    An entry whose url is already indexed is left as it is. A malformed index
-    raises instead of being replaced, so a parse error can never wipe the record.
+    An index that exists but is not a mapping with an 'entries' list raises
+    ValueError (or yaml.YAMLError) instead of being replaced: a replaced index
+    would hold only the next entry.
     """
     index_yaml_path = LIBRARY_DIR / "index.yaml"
-    index_data = {"entries": []}
-    if index_yaml_path.exists():
-        with open(index_yaml_path, "r", encoding="utf-8") as f:
-            index_data = yaml.safe_load(f) or {"entries": []}
+    if not index_yaml_path.exists():
+        return {"entries": []}
+    with open(index_yaml_path, "r", encoding="utf-8") as f:
+        index_data = yaml.safe_load(f)
+    if not isinstance(index_data, dict) or not isinstance(index_data.get("entries"), list):
+        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list; fix it before saving")
+    return index_data
 
+
+def add_to_index(index_data: Dict[str, Any], entry_data: Dict[str, Any]) -> None:
+    """Append one report to the loaded index and write it; an already-indexed url is left as it is."""
     if any(entry.get("url") == entry_data["url"] for entry in index_data["entries"]):
         logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
         return
     index_data["entries"].append(entry_data)
     index_data["entries"].sort(key=lambda x: x.get("date", ""), reverse=True)
+    index_yaml_path = LIBRARY_DIR / "index.yaml"
     atomic_write(index_yaml_path, yaml.safe_dump(index_data, allow_unicode=True, sort_keys=False))
     logger.info(f"Updated index at {index_yaml_path}")
 
@@ -993,6 +1001,8 @@ def process_single_video(url: str, args) -> bool:
     if source_stats:
         emit_claim_source_audit(source_stats)
 
+    # Loaded before the report is written, so a broken index leaves no orphaned report.
+    index_data = load_index()
     filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
 
     # Prepare index entry data
@@ -1008,7 +1018,7 @@ def process_single_video(url: str, args) -> bool:
     if filepath.parent != LIBRARY_DIR:
         entry_data["collection"] = filepath.parent.name
 
-    update_index(entry_data)
+    add_to_index(index_data, entry_data)
     return True
 
 

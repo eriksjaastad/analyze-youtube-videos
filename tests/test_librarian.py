@@ -762,7 +762,7 @@ def test_instagram_does_not_invent_handle_from_name_id_or_route(url, caplog):
 
 @patch("scripts.librarian.get_video_data")
 @patch("scripts.librarian.save_to_library")
-@patch("scripts.librarian.update_index")
+@patch("scripts.librarian.add_to_index")
 def test_save_mode_emits_flag_warning_for_flagged_channel(
     mock_index, mock_save, mock_get, flag_config, tmp_path, monkeypatch, caplog
 ):
