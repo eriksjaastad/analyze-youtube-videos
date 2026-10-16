@@ -13,8 +13,8 @@ fetch-only (default)
 save (--analysis-file)
     Loads a pre-written markdown analysis, applies config/replacements.yaml,
     runs the claim-source audit (warns on empty Source cells, never blocks),
-    writes the report to library/, updates library/index.yaml, re-renders
-    library/00_Index_Library.md. Requires config/categories.yaml. Video data comes from
+    writes the report to library/ and adds it to library/index.yaml, the
+    record of what has been analyzed. Video data comes from
     --data-file when given, otherwise from a fetch cache file whose url
     matches, otherwise from a metadata-only fetch; save never downloads
     subtitles or audio.
@@ -22,13 +22,6 @@ save (--analysis-file)
     A channel on config/flagged_channels.yaml emits a warning in both fetch
     and save modes; the "flag" object only appears in the fetch JSON. It
     never blocks.
-
-batch (--batch-profile)
-    Processes every video on a YouTube or TikTok profile, skipping URLs
-    already in library/index.yaml. Instagram profile batches are rejected.
-    --limit caps the number of videos and --delay sets the seconds between
-    videos. A YouTube HTTP 429 rate limit stops the batch immediately; any
-    batch failure exits 1.
 
 Supported platforms
 -------------------
@@ -39,12 +32,6 @@ CLI flags
 ---------
 url
     YouTube, TikTok, or Instagram URL to process.
---batch-profile
-    Process all videos from a TikTok/YouTube profile URL.
---limit
-    Limit number of videos to process in batch mode.
---delay
-    Delay in seconds between videos in batch mode (default: 45).
 --dry-run
     Save mode only: show the report without writing anything to library/.
     Fetch mode ignores it and still writes data/fetch_cache, the input a
@@ -65,7 +52,6 @@ Examples
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
     uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --data-file data/fetch_cache/youtube-abc123.json
-    uv run --with pyyaml scripts/librarian.py --batch-profile "https://www.tiktok.com/@creator" --limit 10
 
 Dependencies
 ------------
@@ -79,11 +65,10 @@ Dependencies
 
 Exit codes
 ----------
-0  Success (single-video success, or a batch with no failed videos).
-1  Failure: single-video processing failed, no videos found on a profile, or
-   at least one batch video failed.
-2  Argparse usage error: missing url or --batch-profile, unsupported URL/host,
-   Instagram profile batch, unknown flag, or invalid flag value.
+0  Success.
+1  Failure: fetching or saving the video failed.
+2  Argparse usage error: missing url, unsupported URL/host, unknown flag, or
+   invalid flag value.
 """
 import os
 import sys
@@ -92,10 +77,7 @@ import tempfile
 import json
 import subprocess
 import re
-import shutil
 import yaml
-import time
-import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -330,7 +312,7 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
         # TikTok extractor, which lists captions only on request, include them
         # in the metadata that choose_subtitle_track reads.
         metadata = json.loads(_yt_dlp(["--dump-json", "--write-subs", url], timeout=60))
-    except (YtDlpError, json.JSONDecodeError) as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1 or counts the batch item failed
+    except (YtDlpError, json.JSONDecodeError) as e:  # governance: allow-silent SF002: None is get_video_data's failure result; process_single_video returns False and main() exits 1
         logger.error(f"Error fetching metadata: {e}")
         return None
     transcript = "" if metadata_only else _fetch_transcript(url, metadata, use_whisper_fallback)
@@ -762,175 +744,35 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     logger.info(f"[+] Saved to: {filepath}")
     return filepath
 
-def _category_text(text: str) -> str:
-    """Normalize punctuation/spacing while retaining whole Unicode words."""
-    return " " + " ".join(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text).casefold())) + " "
+def load_index() -> Dict[str, Any]:
+    """library/index.yaml, the record of what has been analyzed; empty when none exists yet.
 
-
-def _category_evidence(fields: List[str], keywords: Dict[str, float]) -> float:
-    """Count each signal once; a phrase subsumes its nested keyword matches."""
-    matches = {phrase: weight for phrase, weight in keywords.items()
-               if any(phrase in field for field in fields)}
-    return sum(weight for phrase, weight in matches.items()
-               if not any(phrase != other and phrase in other for other in matches))
-
-
-def get_category(title: str, tags: List[str]) -> Dict[str, str]:
-    """Score topic evidence, independent of category order or library contents.
-
-    Titles carry three times the evidence of tags; total tag evidence is capped
-    at two so channel-wide/SEO tags cannot overwhelm a clear title topic. Each
-    keyword contributes once per source, with nested matches counted only as
-    the longer phrase. Configured weights distinguish topic signals from broad
-    context such as 'ai'. Equal best scores abstain to the default category.
-    Collection labels and historical assignments are never classifier inputs.
-    """
-    categories_path = Path("config/categories.yaml")
-    if not categories_path.exists():
-        return {"id": "miscellaneous", "name": "📦 Miscellaneous"}
-    
-    with open(categories_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    
-    title_fields = [_category_text(title)]
-    tag_fields = [_category_text(tag) for tag in tags]
-    default = config.get("default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"})
-    best_score = 0.0
-    winners = []
-    for cat in config.get("categories", []):
-        configured = cat.get("keywords", {})
-        # Lists remain supported for existing/custom category configurations.
-        if isinstance(configured, list):
-            configured = dict.fromkeys(configured, 1.0)
-        keywords = {_category_text(word): weight for word, weight in configured.items()}
-        score = (3 * _category_evidence(title_fields, keywords)
-                 + min(2, _category_evidence(tag_fields, keywords)))
-        if score > best_score:
-            best_score, winners = score, [cat]
-        elif score == best_score:
-            winners.append(cat)
-    if best_score > 0 and len(winners) == 1:
-        return {"id": winners[0]["id"], "name": winners[0]["name"]}
-    return default
-
-def update_index(entry_data: Dict[str, Any]) -> bool:
-    """
-    Updates library/index.yaml as Source of Truth, then renders 00_Index_Library.md.
+    An index that exists but is not a mapping with an 'entries' list of
+    mappings raises ValueError (or yaml.YAMLError) instead of being replaced:
+    a replaced index would hold only the next entry.
     """
     index_yaml_path = LIBRARY_DIR / "index.yaml"
-    index_md_path = LIBRARY_DIR / "00_Index_Library.md"
-    
-    index_data = {"entries": []}
-    if index_yaml_path.exists():
-        with open(index_yaml_path, "r", encoding="utf-8") as f:
-            try:
-                index_data = yaml.safe_load(f) or {"entries": []}
-            except yaml.YAMLError as e:
-                logger.error(f"Error reading index.yaml: {e}")
-                index_data = {"entries": []}
-            
-    categories_path = Path("config/categories.yaml")
-    if not categories_path.exists():
-        logger.error(
-            "Cannot update index: category configuration %s is missing; leaving the index unchanged",
-            categories_path,
-        )
-        return False
+    if not index_yaml_path.exists():
+        return {"entries": []}
+    with open(index_yaml_path, "r", encoding="utf-8") as f:
+        index_data = yaml.safe_load(f)
+    entries = index_data.get("entries") if isinstance(index_data, dict) else None
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list of mappings; fix it before saving")
+    return index_data
 
-    with open(categories_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
-    categories_config = config.get("categories", [])
-    default_cat = config.get(
-        "default_category", {"id": "miscellaneous", "name": "📦 Miscellaneous"}
-    )
 
-    supported_category_ids = {cat.get("id") for cat in categories_config}
-    supported_category_ids.add(default_cat["id"])
-
-    # Check for duplicates, but still write/render the repaired index below.
+def add_to_index(index_data: Dict[str, Any], entry_data: Dict[str, Any]) -> None:
+    """Append one report to the loaded index and write it; an already-indexed url is left as it is."""
     if any(entry.get("url") == entry_data["url"] for entry in index_data["entries"]):
         logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
-    else:
-        index_data["entries"].append(entry_data)
-
-    # Repair retired/unknown category IDs before rendering. Keeping the entry in
-    # the source-of-truth YAML and placing it in the configured default bucket is
-    # safer than silently losing it from the Markdown index. This covers both
-    # legacy entries already in the index and a newly supplied entry.
-    unknown_entries = [
-        entry
-        for entry in index_data.get("entries", [])
-        if entry.get("category_id") not in supported_category_ids
-    ]
-    # This is a stateful catalog repair: preserve the pre-repair source of truth
-    # so an incorrect category configuration can be recovered.
-    if unknown_entries and index_yaml_path.exists():
-        backup_yaml_path = index_yaml_path.with_suffix(".yaml.bak")
-        try:
-            shutil.copy2(index_yaml_path, backup_yaml_path)
-        except OSError as e:  # governance: allow-silent SF002: False is update_index's failure result (index left unrepaired); process_single_video returns it and main() exits 1
-            logger.error("Could not back up index before category repair: %s", e)
-            return False
-
-    for entry in unknown_entries:
-        category_id = entry.get("category_id")
-        entry_label = entry.get("title") or entry.get("url") or "<untitled entry>"
-        logger.warning(
-            "Entry %r has unknown category_id %r; falling back to default category %r",
-            entry_label,
-            category_id,
-            default_cat["id"],
-        )
-        entry["category_id"] = default_cat["id"]
-    
-    # Sort entries by date descending
-    index_data["entries"].sort(key=lambda x: x.get("date", ""), reverse=True)
-    
-    # Atomic write YAML
-    temp_yaml = index_yaml_path.with_suffix(".yaml.tmp")
-    with open(temp_yaml, "w", encoding="utf-8") as f:
-        yaml.safe_dump(index_data, f, allow_unicode=True, sort_keys=False)
-    temp_yaml.rename(index_yaml_path)
-    
-    # Render Markdown
-    md_content = "# 📚 YouTube Knowledge Library\n\n"
-    
-    # Group by category
-    if not any(cat.get("id") == default_cat["id"] for cat in categories_config):
-        categories_config.append(default_cat)
-            
-    for cat in categories_config:
-        cat_entries = [e for e in index_data["entries"] if e.get("category_id") == cat["id"]]
-        if cat_entries:
-            md_content += f"## {cat['name']}\n"
-            for e in cat_entries:
-                md_content += f"- [[{e['title']}]] ({e['channel']}) - *Analyzed {e['date']}*\n"
-            md_content += "\n"
-            
-    atomic_write(index_md_path, md_content)
-    logger.info(f"Updated index YAML and rendered Markdown at {index_md_path}")
-    return True
-
-def get_profile_video_urls(profile_url: str, limit: Optional[int] = None) -> List[str]:
-    """
-    Fetches all video URLs from a TikTok or YouTube profile/channel.
-    Returns list of video URLs, optionally limited.
-    """
-    logger.info(f"[*] Fetching video list from profile: {profile_url}")
-    try:
-        output = _yt_dlp(["--flat-playlist", "--print", "%(webpage_url)s", profile_url], timeout=60)
-    except YtDlpError as e:  # governance: allow-silent SF002: [] is the profile fetch's failure result; main() logs 'No videos found on profile.' and exits 1
-        logger.error(f"Failed to fetch profile video list: {e}")
-        return []
-
-    urls = [u.strip() for u in output.strip().splitlines() if u.strip()]
-    logger.info(f"[+] Found {len(urls)} videos on profile")
-
-    if limit:
-        urls = urls[:limit]
-        logger.info(f"[*] Limited to first {limit} videos")
-
-    return urls
+        return
+    index_data["entries"].append(entry_data)
+    # str(): older entries may hold a YAML date or null, which can't be compared with a string.
+    index_data["entries"].sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+    index_yaml_path = LIBRARY_DIR / "index.yaml"
+    atomic_write(index_yaml_path, yaml.safe_dump(index_data, allow_unicode=True, sort_keys=False))
+    logger.info(f"Updated index at {index_yaml_path}")
 
 
 # Anchor to the script's own location so the check works regardless of CWD
@@ -1161,18 +1003,9 @@ def process_single_video(url: str, args) -> bool:
     if source_stats:
         emit_claim_source_audit(source_stats)
 
-    categories_path = Path("config/categories.yaml")
-    if not categories_path.exists():
-        logger.error(
-            "Cannot save video: category configuration %s is missing",
-            categories_path,
-        )
-        return False
-
+    # Loaded before the report is written, so a broken index leaves no orphaned report.
+    index_data = load_index()
     filepath = save_to_library(data, analysis, subdir=getattr(args, "subdir", None))
-
-    # Determine category
-    category_info = get_category(data['title'], data.get('tags', []))
 
     # Prepare index entry data
     entry_data = {
@@ -1180,7 +1013,6 @@ def process_single_video(url: str, args) -> bool:
         "channel": data['channel'],
         "date": report_date(data).isoformat(),
         "url": url,
-        "category_id": category_info["id"],
         "filepath": str(filepath)
     }
     # Derive the collection from where the file actually landed, not from the raw flag —
@@ -1188,7 +1020,8 @@ def process_single_video(url: str, args) -> bool:
     if filepath.parent != LIBRARY_DIR:
         entry_data["collection"] = filepath.parent.name
 
-    return update_index(entry_data)
+    add_to_index(index_data, entry_data)
+    return True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1197,10 +1030,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("url", nargs="?", help="YouTube, TikTok, or Instagram URL to process")
-    parser.add_argument("--batch-profile", help="Process all videos from a TikTok/YouTube profile URL")
-    parser.add_argument("--limit", type=int, help="Limit number of videos to process in batch mode")
-    parser.add_argument("--delay", type=int, default=45, help="Delay in seconds between videos in batch mode (default: 45)")
+    parser.add_argument("url", help="YouTube, TikTok, or Instagram URL to process")
     parser.add_argument("--dry-run", action="store_true", help="Save mode only: show the report without writing to library/")
     parser.add_argument("--analysis-file", help="Path to a markdown file containing pre-generated analysis to save")
     parser.add_argument("--data-file", help="Path to JSON previously printed by fetch mode to use as video data (requires --analysis-file)")
@@ -1216,80 +1046,11 @@ def main() -> None:
     if args.data_file and not args.analysis_file:
         parser.error("--data-file requires --analysis-file")
 
-    url = args.batch_profile or args.url
-    if not url:
-        parser.error("Either url or --batch-profile is required")
-    platform = supported_platform(url)
-    if platform is None:
+    url = args.url
+    if supported_platform(url) is None:
         parser.error("Expected a YouTube, TikTok, or Instagram HTTP(S) URL on a supported host")
-    if args.batch_profile and platform == "instagram":
-        parser.error("Instagram profile batches are unsupported; use an individual post or reel URL")
 
     initialize_directories()
-
-    # Batch profile mode
-    if args.batch_profile:
-        urls = get_profile_video_urls(args.batch_profile, limit=args.limit)
-        if not urls:
-            logger.error("No videos found on profile.")
-            sys.exit(1)
-
-        # Check which URLs are already in the index to skip duplicates
-        index_yaml_path = LIBRARY_DIR / "index.yaml"
-        existing_urls = set()
-        if index_yaml_path.exists():
-            import yaml
-            with open(index_yaml_path, "r", encoding="utf-8") as f:
-                index_data = yaml.safe_load(f) or {"entries": []}
-            existing_urls = {e.get("url") for e in index_data.get("entries", [])}
-
-        succeeded = 0
-        failed = 0
-        skipped = 0
-        total = len(urls)
-
-        for i, url in enumerate(urls):
-            if supported_platform(url) is None:
-                logger.error("[%s/%s] Unsupported video URL returned by profile: %s", i + 1, total, url)
-                failed += 1
-                continue
-            if url in existing_urls:
-                logger.info(f"[{i+1}/{total}] SKIP (already in library): {url}")
-                skipped += 1
-                continue
-
-            logger.info(f"\n{'='*60}")
-            logger.info(f"[{i+1}/{total}] Processing: {url}")
-            logger.info(f"{'='*60}")
-
-            try:
-                ok = process_single_video(url, args)
-            except RateLimitedError as e:
-                logger.error(f"Rate limited on {url}: {e}")
-                failed += 1
-                break
-            except FlaggedChannelsConfigError as e:
-                # Same watchlist for every remaining video: stop, don't fail each one.
-                logger.error(f"Aborting batch at {url}: {e}")
-                failed += 1
-                break
-
-            if ok:
-                succeeded += 1
-            else:
-                failed += 1
-
-            # Delay between videos (skip delay after last video)
-            if i < total - 1 and args.delay > 0:
-                logger.info(f"[*] Waiting {args.delay}s before next video...")
-                time.sleep(args.delay)
-
-        logger.info(f"\n{'='*60}")
-        logger.info(f"BATCH COMPLETE: {succeeded} succeeded, {failed} failed, {skipped} skipped (already in library)")
-        logger.info(f"{'='*60}")
-        if failed:
-            sys.exit(1)
-        return
 
     try:
         ok = process_single_video(url, args)

@@ -131,24 +131,13 @@ SAVE_DATA = {
 
 @pytest.fixture
 def save_env(tmp_path, monkeypatch):
-    """Isolated library + config, CWD moved so save_to_library/update_index work."""
+    """Isolated library + config, CWD moved so save_to_library/add_to_index work."""
     library_root = tmp_path / "library"
     library_root.mkdir()
     monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
 
     config_root = tmp_path / "config"
     config_root.mkdir()
-    (config_root / "categories.yaml").write_text(
-        "categories:\n"
-        "  - id: test\n"
-        "    name: 'Test'\n"
-        "    keywords:\n"
-        "      test: 1.0\n"
-        "default_category:\n"
-        "  id: misc\n"
-        "  name: 'Misc'\n",
-        encoding="utf-8",
-    )
     (config_root / "replacements.yaml").write_text("replacements: []\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
@@ -181,7 +170,7 @@ def test_save_with_data_file_makes_zero_get_video_data_calls_and_writes_report(
 
     mock_get.assert_not_called()
     mock_flag.assert_called_once()
-    reports = [p for p in save_env.library_root.glob("*.md") if p.name != "00_Index_Library.md"]
+    reports = list(save_env.library_root.glob("*.md"))
     assert len(reports) == 1
     assert "body" in reports[0].read_text(encoding="utf-8")
 
@@ -223,10 +212,7 @@ def test_save_with_matching_cache_file_makes_zero_get_video_data_calls(
 
     mock_get.assert_not_called()
     mock_flag.assert_called_once()
-    assert any(
-        p.name != "00_Index_Library.md"
-        for p in save_env.library_root.glob("*.md")
-    )
+    assert list(save_env.library_root.glob("*.md"))
 
 
 @patch("scripts.librarian.check_flagged_channel", return_value=None)
@@ -242,6 +228,29 @@ def test_save_without_cache_falls_back_to_metadata_only_get_video_data(
     mock_get.assert_called_once()
     assert mock_get.call_args.kwargs.get("metadata_only") is True
     mock_flag.assert_called_once()
+
+
+@pytest.mark.parametrize("broken", ["entries: [unclosed\n", "", "null\n", "[]\n", "entries: oops\n", "entries:\n- 5\n"])
+@patch("scripts.librarian.check_flagged_channel", return_value=None)
+def test_broken_index_fails_the_save_before_any_report_is_written(mock_flag, broken, save_env):
+    index = save_env.library_root / "index.yaml"
+    index.write_text(broken, encoding="utf-8")
+    data_path = save_env.tmp_path / "fetch.json"
+    data_path.write_text(json.dumps(SAVE_DATA), encoding="utf-8")
+
+    with pytest.raises((librarian.yaml.YAMLError, ValueError)):
+        librarian.process_single_video(SAVE_DATA["url"], _save_args(save_env.analysis, data_file=str(data_path)))
+
+    assert index.read_text(encoding="utf-8") == broken
+    assert not list(save_env.library_root.glob("*.md"))
+
+
+def test_add_to_index_sorts_entries_with_mixed_date_types(save_env):
+    index = {"entries": [{"url": "a", "date": librarian.date(2026, 1, 2)}, {"url": "b", "date": None}]}
+
+    librarian.add_to_index(index, {"title": "T", "url": "c", "date": "2026-10-16"})
+
+    assert [entry["url"] for entry in index["entries"]] == ["c", "a", "b"]
 
 
 # --- fetch cache write -------------------------------------------------------
@@ -282,46 +291,7 @@ def test_fetch_mode_writes_printed_json_to_cache(
     assert json.loads(printed)["url"] == "https://youtu.be/abc123"
 
 
-# --- batch / CLI -------------------------------------------------------------
-
-def test_batch_stops_immediately_on_rate_limited_video(tmp_path, monkeypatch):
-    library_root = tmp_path / "library"
-    library_root.mkdir()
-    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
-    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: [
-        "https://youtu.be/a",
-        "https://youtu.be/b",
-        "https://youtu.be/c",
-    ])
-    process = MagicMock(side_effect=[True, librarian.RateLimitedError("HTTP Error 429")])
-    monkeypatch.setattr(librarian, "process_single_video", process)
-    monkeypatch.setattr(librarian.time, "sleep", lambda *_args: None)
-    monkeypatch.setattr(
-        "sys.argv",
-        ["librarian.py", "--batch-profile", "https://youtube.com/@creator", "--delay", "0"],
-    )
-
-    with pytest.raises(SystemExit) as exc_info:
-        librarian.main()
-
-    assert exc_info.value.code == 1
-    assert process.call_count == 2
-    assert process.call_args_list[1].args[0] == "https://youtu.be/b"
-
-
-def test_batch_profile_list_429_propagates_before_any_video(monkeypatch, fake_ytdlp):
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
-    fake_ytdlp({}, fail={"--flat-playlist": "ERROR: HTTP Error 429: Too Many Requests\nERROR: giving up"})
-    process = MagicMock()
-    monkeypatch.setattr(librarian, "process_single_video", process)
-    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "https://youtube.com/@creator"])
-
-    with pytest.raises(librarian.RateLimitedError, match="HTTP Error 429"):
-        librarian.main()
-
-    process.assert_not_called()
-
+# --- CLI -------------------------------------------------------------
 
 def test_main_single_video_rate_limited_exits_1(monkeypatch):
     monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
@@ -372,30 +342,6 @@ def test_main_single_video_broken_watchlist_exits_1(monkeypatch, caplog):
 
     assert exc_info.value.code == 1
     assert "watchlist broken" in caplog.text
-
-
-def test_batch_aborts_on_broken_watchlist(tmp_path, monkeypatch):
-    library_root = tmp_path / "library"
-    library_root.mkdir()
-    monkeypatch.setattr(librarian, "LIBRARY_DIR", library_root)
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
-    monkeypatch.setattr(librarian, "get_profile_video_urls", lambda *_args, **_kwargs: [
-        "https://youtu.be/a",
-        "https://youtu.be/b",
-    ])
-    process = MagicMock(side_effect=librarian.FlaggedChannelsConfigError("watchlist broken"))
-    monkeypatch.setattr(librarian, "process_single_video", process)
-    monkeypatch.setattr(librarian.time, "sleep", lambda *_args: None)
-    monkeypatch.setattr(
-        "sys.argv",
-        ["librarian.py", "--batch-profile", "https://youtube.com/@creator", "--delay", "0"],
-    )
-
-    with pytest.raises(SystemExit) as exc_info:
-        librarian.main()
-
-    assert exc_info.value.code == 1
-    assert process.call_count == 1
 
 
 def test_data_file_requires_analysis_file(monkeypatch):
