@@ -97,7 +97,7 @@ import yaml
 import time
 import random
 import unicodedata
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
@@ -773,12 +773,16 @@ def emit_claim_source_audit(stats: Dict[str, Any]) -> None:
     logger.warning("=" * 70)
 
 
-def report_date(data: Dict[str, Any]) -> str:
-    """The upload date as YYYY-MM-DD, or today when yt-dlp gave none."""
-    date_str = data.get("date")
-    if date_str and len(date_str) == 8:
-        return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-    return date.today().isoformat()
+def report_date(data: Dict[str, Any]) -> date:
+    """The upload date from yt-dlp's YYYYMMDD, or today when it is missing or not a real date."""
+    raw = data.get("date") or ""
+    if len(raw) != 8:
+        return date.today()
+    try:
+        return datetime.strptime(raw, "%Y%m%d").date()
+    except ValueError:  # governance: allow-silent SF002: a malformed upload date is logged and the report is filed under today, as for a missing one
+        logger.warning(f"Upload date {raw!r} is not a real date; filing under today")
+        return date.today()
 
 
 def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] = None) -> Path:
@@ -789,13 +793,13 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     `subdir` files the report under library/<subdir>/ instead of the flat root, for
     topic collections that accumulate over time (see library/*/README.md).
     """
-    formatted_date = report_date(data)
+    upload_date = report_date(data)
 
     clean_title = safe_slug(data['title'])
     clean_channel = safe_slug(data['channel'])
 
     vid_id = safe_slug(data.get('video_id', 'unknown'))[:8]
-    filename = f"{formatted_date}_{clean_channel}_{clean_title[:40]}_{vid_id}.md"
+    filename = f"{upload_date.isoformat()}_{clean_channel}_{clean_title[:40]}_{vid_id}.md"
 
     target_dir = LIBRARY_DIR
     if subdir:
@@ -832,7 +836,7 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
         "url": data["url"],
         "title": data["title"],
         "channel": data["channel"],
-        "upload_date": date.fromisoformat(formatted_date),
+        "upload_date": upload_date,
         "views": data["view_count"],
         "likes": data["like_count"],
         "duration": data["duration_string"],
@@ -1272,7 +1276,7 @@ def process_single_video(url: str, args) -> bool:
     entry_data = {
         "title": data['title'],
         "channel": data['channel'],
-        "date": report_date(data),
+        "date": report_date(data).isoformat(),
         "url": url,
         "category_id": category_info["id"],
         "filepath": str(filepath)
