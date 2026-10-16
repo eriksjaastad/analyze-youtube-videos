@@ -1,6 +1,7 @@
 import pytest
 import yaml
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from scripts.librarian import clean_srt, get_video_data, check_flagged_channel, extract_research_targets
@@ -187,74 +188,11 @@ This is TikTok.
     assert cleaned == "Hello World This is TikTok."
 
 
-@patch("subprocess.run")
-@patch("tempfile.TemporaryDirectory")
-@patch("pathlib.Path.exists")
-@patch("pathlib.Path.mkdir")
-def test_get_video_data_failure_cleanup(mock_mkdir, mock_exists, mock_tempdir, mock_run):
-    """Verify that cleanup (tempfile.TemporaryDirectory) is used even if subprocess.run fails."""
-    mock_exists.return_value = True
-    mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
-    
-    # Mock context manager behavior
-    mock_temp_path = MagicMock()
-    mock_tempdir.return_value.__enter__.return_value = str(mock_temp_path)
-    
-    data = get_video_data("https://youtube.com/watch?v=fail")
-    
-    assert data is None
-    # Verify the context manager was entered
-    assert mock_tempdir.called
+def test_get_video_data_returns_none_when_metadata_call_fails(fake_ytdlp):
+    calls = fake_ytdlp({}, fail={"--dump-json": "ERROR: Video unavailable"})
 
-@patch("subprocess.run")
-@patch("os.listdir")
-@patch("builtins.open", new_callable=MagicMock)
-@patch("pathlib.Path.exists")
-@patch("pathlib.Path.mkdir")
-@patch("tempfile.TemporaryDirectory")
-def test_get_video_data_success(mock_tempdir, mock_mkdir, mock_exists, mock_open, mock_listdir, mock_run):
-    mock_exists.return_value = True
-    mock_run.side_effect = [
-        # First call: metadata
-        MagicMock(returncode=0, stdout='{"title": "Test Title", "uploader": "Test Channel", "id": "123", "subtitles": {"en": []}}'),
-        # Second call: subtitles
-        MagicMock(returncode=0, stdout="", stderr="")
-    ]
-    
-    # Mock context manager behavior
-    mock_temp_path = "/tmp/fake_temp"
-    mock_tempdir.return_value.__enter__.return_value = mock_temp_path
-    
-    mock_listdir.return_value = ["transcript.en.srt"]
-    mock_open.return_value.__enter__.return_value.read.return_value = "1\n00:00:01,000 --> 00:00:02,000\nHello"
-    
-    data = get_video_data("https://youtube.com/watch?v=123")
-    
-    assert data["title"] == "Test Title"
-    assert data["channel"] == "Test Channel"
-    assert data["video_id"] == "123"
-    assert "Hello" in data["transcript"]
-    
-    # Verify context manager was used
-    assert mock_tempdir.called
-
-    # Inverse Test Analysis:
-    # 1. We don't test the actual library file content generated (only its presence and metadata).
-    # 2. We don't test the --dry-run flag behavior in these unit tests.
-    # 3. We don't test the actual yt-dlp binary output (only mocked responses).
-
-@patch("subprocess.run")
-@patch("tempfile.TemporaryDirectory")
-@patch("pathlib.Path.mkdir")
-def test_get_video_data_metadata_failure_simple(mock_mkdir, mock_tempdir, mock_run):
-    mock_run.return_value = MagicMock(returncode=1, stderr="metadata error")
-    
-    # Mock context manager behavior
-    mock_temp_path = "/tmp/fake_temp"
-    mock_tempdir.return_value.__enter__.return_value = mock_temp_path
-    
-    data = get_video_data("https://youtube.com/watch?v=fail")
-    assert data is None
+    assert get_video_data("https://youtube.com/watch?v=gone") is None
+    assert len(calls) == 1
 
 
 # --- extract_research_targets -------------------------------------------------
@@ -877,25 +815,8 @@ def test_source_audit_below_ceiling_warns_without_publishability_verdict(caplog)
 
 # --- platform detection & field mapping ---------------------------------------
 
-def _mock_get_video_data(metadata_json, url):
-    """Drive get_video_data() with a canned yt-dlp metadata blob and SRT."""
-    metadata_json = json.dumps({"subtitles": {"en": []}, **json.loads(metadata_json)})
-    with patch("subprocess.run") as mock_run, \
-         patch("os.listdir") as mock_listdir, \
-         patch("builtins.open", new_callable=MagicMock) as mock_open, \
-         patch("pathlib.Path.exists", return_value=True), \
-         patch("pathlib.Path.mkdir"), \
-         patch("tempfile.TemporaryDirectory") as mock_tempdir:
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout=metadata_json),
-            MagicMock(returncode=0, stdout="", stderr=""),
-        ]
-        mock_tempdir.return_value.__enter__.return_value = "/tmp/fake_temp"
-        mock_listdir.return_value = ["transcript.en.srt"]
-        mock_open.return_value.__enter__.return_value.read.return_value = (
-            "1\n00:00:01,000 --> 00:00:02,000\nHello"
-        )
-        return get_video_data(url)
+def _fields(metadata_json, url):
+    return librarian._video_fields(json.loads(metadata_json), url, "")
 
 
 def test_platform_detection_instagram_inverts_handle_and_display_name():
@@ -907,7 +828,7 @@ def test_platform_detection_instagram_inverts_handle_and_display_name():
         ' "channel": "jarrenrocks", "uploader": "Jarren Rocks",'
         ' "uploader_id": "40055242682", "id": "DcnKaQaPHTw"}'
     )
-    data = _mock_get_video_data(metadata, "https://www.instagram.com/reel/DcnKaQaPHTw/")
+    data = _fields(metadata, "https://www.instagram.com/reel/DcnKaQaPHTw/")
 
     assert data["platform"] == "instagram"
     assert data["channel"] == "Jarren Rocks"
@@ -919,7 +840,7 @@ def test_platform_detection_tiktok_keeps_native_uploader_id():
         '{"extractor_key": "TikTok", "title": "T", "channel": "Display Name",'
         ' "uploader": "handle", "uploader_id": "handle", "id": "9"}'
     )
-    data = _mock_get_video_data(metadata, "https://www.tiktok.com/@handle/video/9")
+    data = _fields(metadata, "https://www.tiktok.com/@handle/video/9")
 
     assert data["platform"] == "tiktok"
     assert data["channel"] == "Display Name"
@@ -931,7 +852,7 @@ def test_platform_detection_youtube_keeps_native_uploader_id():
         '{"extractor_key": "Youtube", "title": "T", "uploader": "Some Channel",'
         ' "uploader_id": "@somechannel", "id": "abc"}'
     )
-    data = _mock_get_video_data(metadata, "https://youtube.com/watch?v=abc")
+    data = _fields(metadata, "https://youtube.com/watch?v=abc")
 
     assert data["platform"] == "youtube"
     assert data["channel"] == "Some Channel"
@@ -953,7 +874,7 @@ def test_instagram_missing_handle_warns_and_keeps_stable_owner_id(channel, flag_
     flag_config.write_text(yaml.safe_dump({"channels": [
         {"channel_id": "40055242682", "reason": "stable ID flag"},
     ]}))
-    data = _mock_get_video_data(json.dumps({
+    data = _fields(json.dumps({
         "extractor_key": "Instagram", "title": "T", "channel": channel,
         "uploader": "Display Name", "uploader_id": "40055242682", "id": "abc",
     }), "https://instagram.com/reel/abc/")
@@ -974,7 +895,7 @@ def test_instagram_recovers_handle_for_watchlist(metadata, url, expected, flag_c
     flag_config.write_text(yaml.safe_dump({"channels": [{"handle": "@creator.name", "reason": "flag"}]}))
     metadata = {"extractor_key": "Instagram", "title": "T", "id": "abc",
                 "uploader": "Display Name", **metadata}
-    data = _mock_get_video_data(json.dumps(metadata), url)
+    data = _fields(json.dumps(metadata), url)
     assert data["uploader_id"] == expected
     assert check_flagged_channel(data)["reason"] == "flag"
     assert "handle unavailable" not in caplog.text
@@ -989,7 +910,7 @@ def test_instagram_recovers_handle_for_watchlist(metadata, url, expected, flag_c
     "https://instagram.com.evil.test/creator/reel/abc/",
 ])
 def test_instagram_does_not_invent_handle_from_name_id_or_route(url, caplog):
-    data = _mock_get_video_data(json.dumps({
+    data = _fields(json.dumps({
         "extractor_key": "Instagram", "title": "T", "uploader": "creator",
         "uploader_id": "123", "channel_id": "existing-id", "id": "abc",
         "webpage_url": "https://instagram.com/creator/tv/abc/",
@@ -1082,30 +1003,13 @@ def test_fetch_mode_dry_run_still_writes_fetch_cache(
 # rate-limited. On auto-captioned videos the plain "en" auto track is a machine
 # translation that YouTube 429s, so the librarian requests exactly one track.
 
-def _fake_ytdlp(metadata, available_tracks, calls):
-    """run_with_retry stand-in: metadata on the first call, then writes only the requested track."""
-    def run(cmd, timeout, **kwargs):
-        calls.append(cmd)
-        if "--dump-json" in cmd:
-            return MagicMock(returncode=0, stdout=json.dumps(metadata), stderr="")
-        base = cmd[cmd.index("--output") + 1]
-        lang = cmd[cmd.index("--sub-lang") + 1]
-        Path(f"{base}.{lang}.srt").write_text(
-            f"1\n00:00:01,000 --> 00:00:02,000\n{available_tracks[lang]}\n", encoding="utf-8"
-        )
-        return MagicMock(returncode=0, stdout="", stderr="")
-    return run
-
-
-def test_get_video_data_requests_only_en_orig_on_auto_only_video(tmp_path, monkeypatch):
-    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
-    calls = []
+def test_get_video_data_requests_only_en_orig_on_auto_only_video(fake_ytdlp):
     metadata = {
         "title": "Dubbed", "uploader": "Chan", "id": "dub1", "subtitles": {},
         "automatic_captions": {"bn-orig": [], "en": [], "en-orig": []},
     }
     tracks = {"en": "translated round trip", "en-orig": "original speech"}
-    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
+    calls = fake_ytdlp(metadata, tracks)
 
     data = get_video_data("https://youtube.com/watch?v=dub1", use_whisper_fallback=False)
 
@@ -1114,16 +1018,14 @@ def test_get_video_data_requests_only_en_orig_on_auto_only_video(tmp_path, monke
     assert "--write-auto-subs" in calls[1] and "--write-subs" not in calls[1]
 
 
-def test_get_video_data_requests_only_manual_en_when_present(tmp_path, monkeypatch):
-    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
-    calls = []
+def test_get_video_data_requests_only_manual_en_when_present(fake_ytdlp):
     metadata = {
         "title": "Captioned", "uploader": "Chan", "id": "cap1",
         "subtitles": {"en": [], "live_chat": []},
         "automatic_captions": {"en": [], "en-orig": []},
     }
     tracks = {"en": "human captions"}
-    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, tracks, calls))
+    calls = fake_ytdlp(metadata, tracks)
 
     data = get_video_data("https://youtube.com/watch?v=cap1", use_whisper_fallback=False)
 
@@ -1132,29 +1034,25 @@ def test_get_video_data_requests_only_manual_en_when_present(tmp_path, monkeypat
     assert "--write-subs" in calls[1] and "--write-auto-subs" not in calls[1]
 
 
-def test_get_video_data_skips_subtitle_request_without_english_track(tmp_path, monkeypatch):
-    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
-    calls = []
+def test_get_video_data_skips_subtitle_request_without_english_track(fake_ytdlp):
     metadata = {"title": "T", "uploader": "C", "id": "fr1", "automatic_captions": {"fr-orig": []}}
-    monkeypatch.setattr(librarian, "run_with_retry", _fake_ytdlp(metadata, {}, calls))
+    calls = fake_ytdlp(metadata, {})
 
     assert get_video_data("https://youtube.com/watch?v=fr1", use_whisper_fallback=False) is None
     assert len(calls) == 1
 
 
-def test_get_video_data_metadata_call_asks_tiktok_for_its_captions(tmp_path, monkeypatch):
+def test_get_video_data_metadata_call_asks_tiktok_for_its_captions(fake_ytdlp, monkeypatch):
     # yt-dlp's TikTok extractor fills "subtitles" only when the command asks to write them.
-    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
-    calls = []
     listed = {"title": "T", "uploader": "h", "id": "9", "subtitles": {"eng-US": []}}
-    fake = _fake_ytdlp(listed, {"eng-US": "tiktok captions"}, calls)
+    fake_ytdlp(listed, {"eng-US": "tiktok captions"})
+    fake = subprocess.run
 
-    def run(cmd, timeout, **kwargs):
+    def run(cmd, **kwargs):
         if "--dump-json" in cmd and "--write-subs" not in cmd:
-            calls.append(cmd)
-            return MagicMock(returncode=0, stdout=json.dumps(dict(listed, subtitles={})), stderr="")
-        return fake(cmd, timeout)
-    monkeypatch.setattr(librarian, "run_with_retry", run)
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(dict(listed, subtitles={})), "")
+        return fake(cmd, **kwargs)
+    monkeypatch.setattr(subprocess, "run", run)
 
     data = get_video_data("https://www.tiktok.com/@h/video/9", use_whisper_fallback=False)
 
