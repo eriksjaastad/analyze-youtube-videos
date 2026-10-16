@@ -96,7 +96,7 @@ import shutil
 import yaml
 import time
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
@@ -680,6 +680,18 @@ def emit_claim_source_audit(stats: Dict[str, Any]) -> None:
     logger.warning("=" * 70)
 
 
+def report_date(data: Dict[str, Any]) -> date:
+    """The upload date from yt-dlp's YYYYMMDD, or today when it is missing or not a real date."""
+    raw = data.get("date") or ""
+    if len(raw) != 8:
+        return date.today()
+    try:
+        return datetime.strptime(raw, "%Y%m%d").date()
+    except ValueError:  # governance: allow-silent SF002: a malformed upload date is logged and the report is filed under today, as for a missing one
+        logger.warning(f"Upload date {raw!r} is not a real date; filing under today")
+        return date.today()
+
+
 def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] = None) -> Path:
     """
     Saves the final report to the library/ directory.
@@ -688,17 +700,13 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
     `subdir` files the report under library/<subdir>/ instead of the flat root, for
     topic collections that accumulate over time (see library/*/README.md).
     """
-    date_str = data.get('date')
-    if date_str and len(date_str) == 8:
-        formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-    else:
-        formatted_date = datetime.now().strftime("%Y-%m-%d")
+    upload_date = report_date(data)
 
     clean_title = safe_slug(data['title'])
     clean_channel = safe_slug(data['channel'])
 
     vid_id = safe_slug(data.get('video_id', 'unknown'))[:8]
-    filename = f"{formatted_date}_{clean_channel}_{clean_title[:40]}_{vid_id}.md"
+    filename = f"{upload_date.isoformat()}_{clean_channel}_{clean_title[:40]}_{vid_id}.md"
 
     target_dir = LIBRARY_DIR
     if subdir:
@@ -727,19 +735,21 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
         chapter_lines = [f"- [{ch['timestamp']}] {ch['title']}" for ch in data['chapters']]
         chapter_section = "\n## Chapter Timeline\n\n" + "\n".join(chapter_lines) + "\n"
 
+    # safe_dump, not an f-string: a title with a quote or a "#" must still be valid YAML.
+    frontmatter = yaml.safe_dump({
+        "tags": tags,
+        "status": "#status/active",
+        "created": date.today(),
+        "url": data["url"],
+        "title": data["title"],
+        "channel": data["channel"],
+        "upload_date": upload_date,
+        "views": data["view_count"],
+        "likes": data["like_count"],
+        "duration": data["duration_string"],
+    }, allow_unicode=True, sort_keys=False, width=float("inf"))
     content = f"""---
-tags:
-{chr(10).join([f"  - {t}" for t in tags])}
-status: #status/active
-created: {datetime.now().strftime("%Y-%m-%d")}
-url: "{data['url']}"
-title: "{data['title']}"
-channel: "{data['channel']}"
-upload_date: {formatted_date}
-views: {data['view_count']}
-likes: {data['like_count']}
-duration: "{data['duration_string']}"
----
+{frontmatter}---
 
 # {data['title']}
 
@@ -1144,12 +1154,6 @@ def process_single_video(url: str, args) -> bool:
         logger.info("--------------------------------")
         return True
 
-    date_str = data.get('date')
-    if date_str and len(date_str) == 8:
-        formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-    else:
-        formatted_date = datetime.now().strftime("%Y-%m-%d")
-
     # Rule 0 audit runs on the way in, so an unsourced claim table is caught at the moment
     # it lands rather than on a re-read months later. Reports, never blocks — a false
     # positive costs one ignored warning, a missed one costs an unsourced grade in the library.
@@ -1174,7 +1178,7 @@ def process_single_video(url: str, args) -> bool:
     entry_data = {
         "title": data['title'],
         "channel": data['channel'],
-        "date": formatted_date,
+        "date": report_date(data).isoformat(),
         "url": url,
         "category_id": category_info["id"],
         "filepath": str(filepath)
