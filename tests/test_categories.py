@@ -5,7 +5,6 @@ import pytest
 import yaml
 
 from scripts.librarian import get_category
-from scripts.evaluate_categories import evaluate
 
 
 # Four individually named failures in the card, plus the Fat Loss Scientist
@@ -86,23 +85,3 @@ def test_nested_keyword_is_not_double_counted(tmp_path, monkeypatch):
     Path("config/categories.yaml").write_text(yaml.safe_dump(config))
     assert get_category("modern-art photography", [])["id"] == "miscellaneous"
 
-
-def test_evaluation_uses_collections_only_for_scoring_and_preserves_files(tmp_path):
-    library = tmp_path / "library"
-    library.mkdir()
-    report = library / "report.md"
-    report.write_text("---\ntags: [p/analyze-youtube-videos, topic/ai]\n---\nReport untouched.\n")
-    index = library / "index.yaml"
-    entry = {"title": "Wall Street debt", "collection": "jev", "category_id": "ai_automation",
-             "filepath": "library/report.md"}
-    index.write_text(yaml.safe_dump({"entries": [entry]}))
-    before = {p: p.read_bytes() for p in library.iterdir()}
-    result = evaluate(index)
-    assert result["predicted"] == {"finance": 1}
-    assert result["agreement"] == {"stored": 1, "predicted": 0, "scored": 1}
-    assert {p: p.read_bytes() for p in library.iterdir()} == before
-    entry["collection"] = "investment"
-    index.write_text(yaml.safe_dump({"entries": [entry]}))
-    result = evaluate(index)
-    assert result["predicted"] == {"finance": 1}
-    assert result["agreement"] == {"stored": 0, "predicted": 1, "scored": 1}

@@ -88,8 +88,7 @@ external factual claims.
 analyze-youtube-videos/
 ├── scripts/
 │   ├── librarian.py       ← Transcript fetching, cleaning, library management
-│   ├── config.py          ← Shared config, env, utilities
-│   └── evaluate_categories.py ← Category scoring evaluation
+│   └── config.py          ← Shared config, env, utilities
 ├── library/               ← Individual video reports
 │   ├── index.yaml         ← Source of truth
 │   └── 00_Index_Library.md
