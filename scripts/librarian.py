@@ -792,17 +792,18 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
 def load_index() -> Dict[str, Any]:
     """library/index.yaml, the record of what has been analyzed; empty when none exists yet.
 
-    An index that exists but is not a mapping with an 'entries' list raises
-    ValueError (or yaml.YAMLError) instead of being replaced: a replaced index
-    would hold only the next entry.
+    An index that exists but is not a mapping with an 'entries' list of
+    mappings raises ValueError (or yaml.YAMLError) instead of being replaced:
+    a replaced index would hold only the next entry.
     """
     index_yaml_path = LIBRARY_DIR / "index.yaml"
     if not index_yaml_path.exists():
         return {"entries": []}
     with open(index_yaml_path, "r", encoding="utf-8") as f:
         index_data = yaml.safe_load(f)
-    if not isinstance(index_data, dict) or not isinstance(index_data.get("entries"), list):
-        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list; fix it before saving")
+    entries = index_data.get("entries") if isinstance(index_data, dict) else None
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list of mappings; fix it before saving")
     return index_data
 
 
@@ -812,7 +813,8 @@ def add_to_index(index_data: Dict[str, Any], entry_data: Dict[str, Any]) -> None
         logger.info(f"Entry for {entry_data['title']} already exists in index. Skipping.")
         return
     index_data["entries"].append(entry_data)
-    index_data["entries"].sort(key=lambda x: x.get("date", ""), reverse=True)
+    # str(): older entries may hold a YAML date or null, which can't be compared with a string.
+    index_data["entries"].sort(key=lambda x: str(x.get("date") or ""), reverse=True)
     index_yaml_path = LIBRARY_DIR / "index.yaml"
     atomic_write(index_yaml_path, yaml.safe_dump(index_data, allow_unicode=True, sort_keys=False))
     logger.info(f"Updated index at {index_yaml_path}")
