@@ -58,9 +58,9 @@ def test_yt_dlp_runs_a_failed_call_once(mock_run):
     assert mock_run.call_count == 1
 
 
-@patch("subprocess.run", side_effect=subprocess.TimeoutExpired("yt-dlp", 60))
-def test_yt_dlp_timeout_is_a_yt_dlp_error(mock_run):
-    with pytest.raises(librarian.YtDlpError):
+@pytest.mark.parametrize("error", [subprocess.TimeoutExpired("yt-dlp", 60), FileNotFoundError("yt-dlp")])
+def test_yt_dlp_that_cannot_complete_is_a_yt_dlp_error(error):
+    with patch("subprocess.run", side_effect=error), pytest.raises(librarian.YtDlpError):
         librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
 
@@ -308,17 +308,6 @@ def test_batch_stops_immediately_on_rate_limited_video(tmp_path, monkeypatch):
     assert exc_info.value.code == 1
     assert process.call_count == 2
     assert process.call_args_list[1].args[0] == "https://youtu.be/b"
-
-
-def test_batch_profile_list_rate_limited_exits_1(monkeypatch, fake_ytdlp):
-    monkeypatch.setattr(librarian, "initialize_directories", lambda: None)
-    fake_ytdlp({}, fail={"--flat-playlist": RATE_LIMITED})
-    monkeypatch.setattr("sys.argv", ["librarian.py", "--batch-profile", "https://youtube.com/@creator"])
-
-    with pytest.raises(SystemExit) as exc_info:
-        librarian.main()
-
-    assert exc_info.value.code == 1
 
 
 def test_main_single_video_rate_limited_exits_1(monkeypatch):

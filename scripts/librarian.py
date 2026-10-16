@@ -1225,11 +1225,7 @@ def main() -> None:
 
     # Batch profile mode
     if args.batch_profile:
-        try:
-            urls = get_profile_video_urls(args.batch_profile, limit=args.limit)
-        except RateLimitedError as e:
-            logger.error(f"Rate limited on {args.batch_profile}: {e}")
-            sys.exit(1)
+        urls = get_profile_video_urls(args.batch_profile, limit=args.limit)
         if not urls:
             logger.error("No videos found on profile.")
             sys.exit(1)
