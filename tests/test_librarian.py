@@ -370,6 +370,14 @@ def test_save_to_library_degenerate_subdir_falls_back_to_root(library_root):
     assert sorted(p.name for p in library_root.iterdir()) == [path.name]
 
 
+def test_save_to_library_frontmatter_is_valid_yaml_for_any_title(library_root):
+    title = 'He said "no": #1 reason'
+    path = librarian.save_to_library(dict(VIDEO_STUB, title=title), "body")
+    frontmatter = yaml.safe_load(path.read_text(encoding="utf-8").split("---")[1])
+    assert frontmatter["title"] == title
+    assert frontmatter["status"] == "#status/active"
+
+
 # --- get_category() topic classification --------------------------------------------
 # Preserve legitimate neighbouring topics while resolving competing evidence.
 
