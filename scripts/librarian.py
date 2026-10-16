@@ -4,18 +4,18 @@ Modes
 -----
 fetch-only (default)
     Run with just a url. Fetches metadata + transcript from the platform,
-    adds research_targets, prints JSON (transcript, metadata, and
+    applies config/replacements.yaml to the transcript, adds
+    research_targets, prints JSON (transcript, metadata, and
     research_targets) to stdout, and caches that same JSON under
     data/fetch_cache/<platform>-<video_id>.json so a later save can file
     the report without hitting the network again. Nothing is written to
     the library.
 
 save (--analysis-file)
-    Loads a pre-written markdown analysis, applies config/replacements.yaml,
-    runs the claim-source audit (warns on empty Source cells, never blocks),
-    writes the report to library/ and adds it to library/index.yaml, the
-    record of what has been analyzed. Video data comes from
-    --data-file when given, otherwise from a fetch cache file whose url
+    Loads a pre-written markdown analysis, runs the claim-source audit
+    (warns on empty Source cells, never blocks), writes the report to
+    library/ and adds it to library/index.yaml, the record of what has
+    been analyzed. Video data comes from --data-file when given, otherwise from a fetch cache file whose url
     matches, otherwise from a metadata-only fetch; save never downloads
     subtitles or audio.
 
@@ -48,19 +48,19 @@ url
 
 Examples
 --------
-    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..."
-    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
-    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
-    uv run --with pyyaml scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --data-file data/fetch_cache/youtube-abc123.json
+    uv run scripts/librarian.py "https://www.youtube.com/watch?v=..."
+    uv run scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
+    uv run scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --subdir agentic-work
+    uv run scripts/librarian.py "https://www.youtube.com/watch?v=..." --analysis-file /tmp/analysis.md --data-file data/fetch_cache/youtube-abc123.json
 
 Dependencies
 ------------
-    The invocation prefix is `uv run --with pyyaml`. The Whisper fallback
-    (on by default, and always needed for Instagram, which has no captions)
-    also needs `--with faster-whisper==1.2.1`, else pass --no-whisper.
-    yt-dlp is invoked as a subprocess from PATH on purpose, not pinned:
-    YouTube changes break old yt-dlp releases within weeks, so the runtime
-    wants the current Homebrew build (`brew upgrade yt-dlp`). The test
+    pyproject.toml declares them, and `uv run` installs them. The Whisper
+    fallback (on by default, and always needed for Instagram, which has no
+    captions) needs the whisper extra, `uv run --extra whisper`, else pass
+    --no-whisper. yt-dlp is invoked as a subprocess from PATH on purpose, not
+    pinned: YouTube changes break old yt-dlp releases within weeks, so the
+    runtime wants the current Homebrew build (`brew upgrade yt-dlp`). The test
     suite mocks every yt-dlp call and needs no yt-dlp at all.
 
 Exit codes
@@ -72,6 +72,8 @@ Exit codes
 """
 import os
 import sys
+import logging
+import unicodedata
 import argparse
 import tempfile
 import json
@@ -82,8 +84,11 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlsplit
-from scripts.config import LIBRARY_DIR, TEMP_DIR, choose_subtitle_track, initialize_directories, safe_slug, logger, apply_replacements
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("warden")
+
+LIBRARY_DIR = Path(os.getenv("LIBRARY_DIR", "library"))
 # data/ is gitignored; the fetch cache is a local convenience, not library content.
 FETCH_CACHE_DIR = Path(os.getenv("FETCH_CACHE_DIR", "data/fetch_cache"))
 
@@ -130,6 +135,13 @@ def _yt_dlp(args: List[str], timeout: int) -> str:
             raise RateLimitedError(stderr)
         raise YtDlpError(f"yt-dlp exited {result.returncode}: {stderr}")
     return result.stdout
+
+
+def safe_slug(text: str) -> str:
+    """Lowercase ASCII text with runs of non-word characters collapsed to hyphens, for file names."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^\w\s-]", "", text).strip().lower()
+    return re.sub(r"[-\s]+", "-", text)
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -252,7 +264,7 @@ def transcribe_with_whisper(audio_path: Path) -> Optional[str]:
         return transcript
 
     except ImportError:  # governance: allow-silent SF002: faster-whisper is an optional dependency; None is the failure result and get_video_data returns None (CLI exit 1) when no SRT transcript exists
-        logger.error("faster-whisper not installed. Install with: pip install faster-whisper")
+        logger.error("faster-whisper is not installed: run with `uv run --extra whisper`, or pass --no-whisper")
         return None
     except Exception as e:  # governance: allow-silent SF002: None is transcribe_with_whisper's failure result; get_video_data returns None (CLI exit 1) when no SRT transcript exists
         logger.error(f"Whisper transcription failed: {e}")
@@ -318,12 +330,45 @@ def get_video_data(url: str, use_whisper_fallback: bool = True, metadata_only: b
     transcript = "" if metadata_only else _fetch_transcript(url, metadata, use_whisper_fallback)
     if transcript is None:
         return None
-    return _video_fields(metadata, url, transcript)
+    return _video_fields(metadata, url, apply_replacements(transcript))
+
+
+ORIGINAL_ENGLISH_SUB_LANG = "en-orig"
+
+
+def _first_english(tracks: Optional[dict]) -> Optional[str]:
+    """The alphabetically first English language key (en, en-US, eng-US, ...), or None."""
+    english = sorted(lang for lang in (tracks or {}) if lang.lower().startswith("en"))
+    return english[0] if english else None
+
+
+def choose_subtitle_track(metadata: dict) -> Optional[tuple[str, bool]]:
+    """
+    Pick the one English caption track to download, as (language, is_auto).
+
+    Order: manual English, else en-orig, else any auto English track. None when
+    the metadata lists no English track at all.
+
+    One track, not several: yt-dlp makes one request per requested track and
+    fails the whole call if any of them is rate-limited. On auto-captioned
+    YouTube videos the plain "en" auto track is a machine translation
+    (lang=xx&tlang=en; on auto-dubbed videos it comes from a dub), YouTube 429s
+    those requests, and the fetch aborted even when en-orig, the recognition of
+    the original audio, would have downloaded fine.
+    """
+    manual = _first_english(metadata.get("subtitles"))
+    if manual:
+        return manual, False
+    auto = metadata.get("automatic_captions") or {}
+    if ORIGINAL_ENGLISH_SUB_LANG in auto:
+        return ORIGINAL_ENGLISH_SUB_LANG, True
+    auto_english = _first_english(auto)
+    return (auto_english, True) if auto_english else None
 
 
 def _fetch_transcript(url: str, metadata: Dict[str, Any], use_whisper_fallback: bool) -> Optional[str]:
     """The cleaned caption track the metadata lists, else a Whisper transcript, else None."""
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="transcript_") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="transcript_") as temp_dir:
         work_dir = Path(temp_dir)
         track = choose_subtitle_track(metadata)
         if track:
@@ -770,6 +815,30 @@ def update_index(entry_data: Dict[str, Any]) -> None:
 FLAGGED_CHANNELS_PATH = Path(__file__).resolve().parent.parent / "config" / "flagged_channels.yaml"
 
 
+# Anchored like FLAGGED_CHANNELS_PATH, so the rules apply wherever the librarian runs from.
+REPLACEMENTS_PATH = Path(__file__).resolve().parent.parent / "config" / "replacements.yaml"
+
+
+def apply_replacements(text: str) -> str:
+    """Fix known caption mis-hearings ("Picks Verse" -> "Pixverse") from config/replacements.yaml.
+
+    Runs on the transcript at fetch time, where the errors come from, so the
+    analysis is written from corrected text. A missing file means no rules. A
+    malformed one raises: silently skipping every correction is worse than a
+    failed fetch.
+    """
+    if not REPLACEMENTS_PATH.exists():
+        return text
+    with open(REPLACEMENTS_PATH, "r", encoding="utf-8") as f:
+        rules = (yaml.safe_load(f) or {}).get("replacements") or []
+    for rule in rules:
+        if rule.get("find"):
+            flags = 0 if rule.get("case_sensitive") else re.IGNORECASE
+            replacement = rule.get("replace", "")
+            text = re.sub(re.escape(rule["find"]), lambda _match: replacement, text, flags=flags)
+    return text
+
+
 def _norm_handle(value: Optional[str]) -> str:
     """Normalize a channel handle for comparison: lowercase, no leading '@'.
 
@@ -977,9 +1046,6 @@ def process_single_video(url: str, args) -> bool:
     with open(analysis_path, "r", encoding="utf-8") as f:
         analysis = f.read()
 
-    # Apply find-replace rules from config/replacements.yaml
-    analysis = apply_replacements(analysis)
-
     if args.dry_run:
         logger.info(f"--- DRY RUN: {data['title']} ---")
         logger.info(analysis)
@@ -1037,8 +1103,6 @@ def main() -> None:
     url = args.url
     if supported_platform(url) is None:
         parser.error("Expected a YouTube, TikTok, or Instagram HTTP(S) URL on a supported host")
-
-    initialize_directories()
 
     try:
         ok = process_single_video(url, args)

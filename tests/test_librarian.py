@@ -826,6 +826,17 @@ def test_fetch_mode_dry_run_still_writes_fetch_cache(
     assert cached["title"] == "Test Video"
 
 
+# Manual English and en-orig are covered end to end below.
+@pytest.mark.parametrize("metadata,expected", [
+    ({"subtitles": {"eng-US": []}}, ("eng-US", False)),  # TikTok's manual track
+    ({"subtitles": {"fr": []}, "automatic_captions": {"fr": [], "en": []}}, ("en", True)),
+    ({"subtitles": {"live_chat": []}, "automatic_captions": {"fr-orig": []}}, None),
+    ({}, None),
+])
+def test_choose_subtitle_track(metadata, expected):
+    assert librarian.choose_subtitle_track(metadata) == expected
+
+
 # --- one subtitle track per video ----------------------------------------------
 # yt-dlp makes one request per requested track and fails the call if any is
 # rate-limited. On auto-captioned videos the plain "en" auto track is a machine
@@ -885,3 +896,24 @@ def test_get_video_data_metadata_call_asks_tiktok_for_its_captions(fake_ytdlp, m
     data = get_video_data("https://www.tiktok.com/@h/video/9", use_whisper_fallback=False)
 
     assert "tiktok captions" in data["transcript"]
+
+
+# --- replacements ------------------------------------------------------------------
+
+def test_fetch_applies_replacements_to_the_transcript(fake_ytdlp, tmp_path):
+    (tmp_path / "replacements.yaml").write_text(
+        "replacements:\n  - find: Picks Verse\n    replace: Pixverse\n", encoding="utf-8"
+    )
+    fake_ytdlp({"title": "T", "uploader": "C", "id": "v", "subtitles": {"en": []}},
+               {"en": "I lip-synced it in picks verse"})
+
+    data = get_video_data("https://youtube.com/watch?v=v", use_whisper_fallback=False)
+
+    assert data["transcript"] == "I lip-synced it in Pixverse"
+
+
+def test_malformed_replacements_fail_the_run(tmp_path):
+    (tmp_path / "replacements.yaml").write_text("replacements: [unclosed\n", encoding="utf-8")
+
+    with pytest.raises(yaml.YAMLError):
+        librarian.apply_replacements("text")

@@ -7,9 +7,9 @@
 ## How to Use This File
 
 1. **Add video URL** to "To Analyze" section below
-2. **Fetch metadata + transcript:** `uv run --with pyyaml scripts/librarian.py [URL]` prints JSON and caches it under `data/fetch_cache/`
+2. **Fetch metadata + transcript:** `uv run scripts/librarian.py [URL]` prints JSON and caches it under `data/fetch_cache/`
 3. **Claude writes the analysis** from that JSON (the librarian never analyzes)
-4. **Save it:** `uv run --with pyyaml scripts/librarian.py [URL] --analysis-file <report.md>` writes the report to `library/` and updates the index
+4. **Save it:** `uv run scripts/librarian.py [URL] --analysis-file <report.md>` writes the report to `library/` and updates the index
 5. **Remove the URL here by hand.** `library/index.yaml` is the record of what has been analyzed
 
 ---
@@ -44,13 +44,13 @@ https://youtu.be/KYe2IToDzl4 - **Prof Steve Keen, "You Won't Believe Who's Actua
 
 ```bash
 # Fetch metadata + transcript as JSON (also cached under data/fetch_cache/)
-uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID
+uv run scripts/librarian.py https://youtu.be/VIDEO_ID
 
 # Save a report written by Claude
-uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md
+uv run scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md
 
 # Dry run: preview the save without writing anything to library/
-uv run --with pyyaml scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md --dry-run
+uv run scripts/librarian.py https://youtu.be/VIDEO_ID --analysis-file report.md --dry-run
 ```
 
 ### What Gets Created

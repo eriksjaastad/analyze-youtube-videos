@@ -8,10 +8,10 @@ from scripts import librarian
 
 
 @pytest.fixture(autouse=True)
-def _isolate_scratch_dirs(tmp_path, monkeypatch):
-    """Fetch mode writes data/fetch_cache and yt-dlp scratch files; keep every test out of the real ones."""
+def _isolate_local_files(tmp_path, monkeypatch):
+    """Fetch mode writes data/fetch_cache; keep every test out of the real one and the real rules."""
     monkeypatch.setattr(librarian, "FETCH_CACHE_DIR", tmp_path / "fetch_cache")
-    monkeypatch.setattr(librarian, "TEMP_DIR", tmp_path)
+    monkeypatch.setattr(librarian, "REPLACEMENTS_PATH", tmp_path / "replacements.yaml")
 
 
 @pytest.fixture

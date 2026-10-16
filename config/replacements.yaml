@@ -1,6 +1,6 @@
 # Post-Processing Find & Replace Rules
 #
-# These are applied after the analysis step to fix common transcription errors.
+# Applied to the transcript at fetch time to fix common caption mis-hearings.
 # Add patterns as you discover them across videos.
 #
 # Format:

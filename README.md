@@ -17,17 +17,17 @@ That's it. No external LLMs, no API keys, no extra steps.
 
 ```bash
 # Fetch transcript data (prints JSON to stdout)
-uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..."
+uv run scripts/librarian.py "https://youtube.com/watch?v=..."
 
 # Save a pre-written analysis to the library
-uv run --with pyyaml scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
+uv run scripts/librarian.py "https://youtube.com/watch?v=..." --analysis-file /tmp/analysis.md
 ```
 
 The Whisper fallback (on by default, and always needed for Instagram, which has
-no captions) needs `--with faster-whisper==1.2.1` added to the prefix, or pass
-`--no-whisper` to skip it.
+no captions) needs the whisper extra, `uv run --extra whisper scripts/librarian.py ...`,
+or pass `--no-whisper` to skip it. Dependencies are declared in `pyproject.toml`.
 
-Full flag reference lives in `uv run --with pyyaml scripts/librarian.py --help`.
+Full flag reference lives in `uv run scripts/librarian.py --help`.
 
 ### Collections
 
@@ -63,7 +63,7 @@ per video.
 ### Supported Platforms
 
 YouTube, TikTok, and Instagram (posts/reels) are supported; the authoritative
-list and full flag reference live in `uv run --with pyyaml scripts/librarian.py --help`.
+list and full flag reference live in `uv run scripts/librarian.py --help`.
 
 ### Analysis Modes
 - **Standard analysis** — video overview, key concepts, actionable takeaways, critical assessment
@@ -84,12 +84,11 @@ external factual claims.
 ```
 analyze-youtube-videos/
 ├── scripts/
-│   ├── librarian.py       ← Transcript fetching, cleaning, library management
-│   └── config.py          ← Shared config, env, utilities
+│   └── librarian.py       ← Transcript fetching, cleaning, library management
 ├── library/               ← Individual video reports
 │   └── index.yaml         ← Record of what has been analyzed
 ├── config/
-│   ├── replacements.yaml      ← Find-replace rules for analysis cleanup
+│   ├── replacements.yaml      ← Caption mis-hearing fixes, applied at fetch
 │   └── flagged_channels.yaml  ← Watchlist of low-trust sources (see below)
 ├── data/
 │   └── fetch_cache/       ← Gitignored; written by fetch mode
@@ -211,14 +210,13 @@ privacy-routing mapped onto a documented local-model-fallback security risk in d
 | Script | Purpose |
 |--------|---------|
 | `librarian.py` | Fetch transcripts, clean subtitles, save reports, manage library index |
-| `config.py` | Shared config: paths, logging, the one-caption-track choice, replacements |
 
 ---
 
 ## Testing
 
 ```bash
-uv run --with pyyaml==6.0.3 --with pytest==9.0.2 pytest -q
+uv run pytest -q
 ```
 
 Tests mock every yt-dlp call. The runtime uses the Homebrew `yt-dlp` on PATH, deliberately unpinned
