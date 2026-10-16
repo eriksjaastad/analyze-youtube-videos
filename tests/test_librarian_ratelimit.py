@@ -230,7 +230,7 @@ def test_save_without_cache_falls_back_to_metadata_only_get_video_data(
     mock_flag.assert_called_once()
 
 
-@pytest.mark.parametrize("broken", ["entries: [unclosed\n", "", "null\n", "[]\n", "entries: oops\n"])
+@pytest.mark.parametrize("broken", ["entries: [unclosed\n", "", "null\n", "[]\n", "entries: oops\n", "entries:\n- 5\n"])
 @patch("scripts.librarian.check_flagged_channel", return_value=None)
 def test_broken_index_fails_the_save_before_any_report_is_written(mock_flag, broken, save_env):
     index = save_env.library_root / "index.yaml"

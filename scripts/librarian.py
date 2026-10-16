@@ -747,17 +747,18 @@ def save_to_library(data: Dict[str, Any], analysis: str, subdir: Optional[str] =
 def load_index() -> Dict[str, Any]:
     """library/index.yaml, the record of what has been analyzed; empty when none exists yet.
 
-    An index that exists but is not a mapping with an 'entries' list raises
-    ValueError (or yaml.YAMLError) instead of being replaced: a replaced index
-    would hold only the next entry.
+    An index that exists but is not a mapping with an 'entries' list of
+    mappings raises ValueError (or yaml.YAMLError) instead of being replaced:
+    a replaced index would hold only the next entry.
     """
     index_yaml_path = LIBRARY_DIR / "index.yaml"
     if not index_yaml_path.exists():
         return {"entries": []}
     with open(index_yaml_path, "r", encoding="utf-8") as f:
         index_data = yaml.safe_load(f)
-    if not isinstance(index_data, dict) or not isinstance(index_data.get("entries"), list):
-        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list; fix it before saving")
+    entries = index_data.get("entries") if isinstance(index_data, dict) else None
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise ValueError(f"{index_yaml_path} must be a mapping with an 'entries' list of mappings; fix it before saving")
     return index_data
 
 
