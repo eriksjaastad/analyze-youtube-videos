@@ -536,19 +536,9 @@ _FENCE_RE = re.compile(r'^\s*(```|~~~)')
 # Threshold from FACT_CHECK_PROTOCOL.md. Both live in one place only because
 # test_ceiling_matches_protocol_doc() asserts they agree — comments don't prevent drift.
 UNSOURCED_CLAIM_CEILING = 0.20
-# A table is a claim table if any header cell contains "claim". Nothing more.
-#
-# Two earlier versions tried to be cleverer and both failed review for the same reason.
-# Keying off a numbered first column missed tables that don't number. Adding an allowlist
-# of verdict words (grade/verdict/reality/...) missed "Verified?" and "Holds up?". A survey
-# of every claim-bearing table in the library found 16 distinct header shapes and the
-# verdict column spelled at least seven ways — an allowlist will always be one spelling
-# behind, and each miss is invisible rather than noisy.
-#
-# So: match the one word that is actually invariant. Two of the 16 shapes are not grading
-# tables ("# | beat | claim", "# | claim | where") and will be flagged anyway. That is the
-# right trade — this reports and never blocks, so a false positive costs one ignored
-# warning while a false negative costs an unsourced grade shipped into the library.
+# A table is a claim table if any header cell contains "claim", the one invariant word
+# across the library's 16 header shapes. Over-flagging costs an ignored warning; a miss
+# costs an unsourced grade. DECISIONS.md has the versions that failed.
 _CLAIM_HEADER = "claim"
 
 
@@ -559,9 +549,7 @@ def _split_row(line: str) -> List[str]:
     """Split a markdown table row into trimmed cells, dropping the outer pipes.
 
     Splits on unescaped pipes only, so a \\| inside claim text can't shift column
-    alignment and mislabel a sourced row as unsourced. Uses a lookbehind rather than a
-    placeholder swap — an earlier version substituted \\x00, which corrupted any literal
-    NUL byte in the source text.
+    alignment and mislabel a sourced row as unsourced.
     """
     cells = _UNESCAPED_PIPE_RE.split(line.strip())
     # The outer pipes produce empty leading/trailing entries; drop only those.
@@ -581,12 +569,7 @@ def _is_unverified_grade(cell: str) -> bool:
     Emoji and markdown emphasis are stripped by tokenisation, so "**🟡 Unverified**" and
     "🟡 Unverified specifics" both match, while "Number confirmed, timing unverified"
     does not — its primary grade is Confirmed, which the Grades table says needs a link.
-
-    Deliberately positional rather than an allowlist of assertive grade words. A previous
-    version listed confirmed/wrong/imprecise/... and could still be beaten by any spelling
-    absent from it ("Misleading, unverified"). Round two of this review failed on exactly
-    that shape of mistake at the header level; the fix is to stop enumerating vocabulary
-    and key on structure, which cannot fall behind.
+    Positional on purpose: a vocabulary allowlist is always one spelling behind.
     """
     words = _WORD_RE.findall(cell.lower())
     return bool(words) and words[0] == "unverified"
@@ -600,8 +583,8 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
     2026-08-14 overturns survived review. A bulk '## Sources' list proves nothing about
     any individual grade, so it deliberately does not count here.
 
-    Detection reads the table HEADER, matching only on the word "claim" — see the note on
-    _CLAIM_HEADER for why every cleverer version failed. A table with no Source column at
+    Detection reads the table HEADER, matching only on the word "claim" (see
+    _CLAIM_HEADER). A table with no Source column at
     all counts every row as unsourced, which is the correct reading of the 2026-08-14
     report. Tables inside fenced code blocks are skipped so documentation examples of the
     format don't get audited as real reports.
@@ -659,15 +642,9 @@ def audit_claim_sources(analysis: str) -> Optional[Dict[str, Any]]:
             if _MD_LINK_RE.search(cell):
                 pass  # cited
             elif cell and _is_unverified_grade(grade):
-                # A link-free Source cell is legitimate on exactly one grade: Unverified,
-                # where the protocol asks for the search trail instead ("searched X, Y;
-                # nothing primary found"). Counting that as unsourced would fire the
-                # warning at a report for complying, and a warning that punishes
-                # compliance is one people learn to ignore.
-                #
-                # Narrow on purpose. Accepting *any* prose here would let a "Detail" or
-                # "Note" column launder a whole uncited table — which is the 2026-08-14
-                # pattern exactly: prose in every row, links only in a list at the bottom.
+                # Unverified is the one grade where the protocol asks for a search trail
+                # instead of a link. Only that grade, so a prose "Note" column can't
+                # launder an uncited table (the 2026-08-14 pattern).
                 documented += 1
             else:
                 unsourced += 1
