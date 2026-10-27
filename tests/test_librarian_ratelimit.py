@@ -6,7 +6,6 @@ real yt-dlp binary.
 
 import json
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -21,38 +20,30 @@ def _completed(returncode, stdout="", stderr=""):
 
 # --- is_rate_limited ---------------------------------------------------------
 
-@pytest.mark.parametrize("stderr", [
-    "ERROR: HTTP Error 429: Too Many Requests",
-    "http error 429",
-    "Too Many Requests",
-    "too many requests",
+@pytest.mark.parametrize("stderr, limited", [
+    ("ERROR: HTTP Error 429: Too Many Requests", True),
+    ("http error 429", True),
+    ("Too Many Requests", True),
+    ("too many requests", True),
+    ("", False),
+    ("some other failure", False),
+    ("HTTP Error 500", False),
 ])
-def test_is_rate_limited_detects_429_phrases(stderr):
-    assert librarian.is_rate_limited(stderr) is True
-
-
-@pytest.mark.parametrize("stderr", ["", "some other failure", "HTTP Error 500"])
-def test_is_rate_limited_rejects_other_stderr(stderr):
-    assert librarian.is_rate_limited(stderr) is False
+def test_is_rate_limited(stderr, limited):
+    assert librarian.is_rate_limited(stderr) is limited
 
 
 # --- _yt_dlp ------------------------------------------------------------------
 
+@pytest.mark.parametrize("stderr, error", [
+    ("ERROR: HTTP Error 429: Too Many Requests", librarian.RateLimitedError),
+    ("generic failure", librarian.YtDlpError),
+])
 @patch("subprocess.run")
-def test_yt_dlp_fails_fast_on_429(mock_run):
-    mock_run.return_value = _completed(1, stderr="ERROR: HTTP Error 429: Too Many Requests")
+def test_yt_dlp_failed_call_raises_once_with_its_stderr(mock_run, stderr, error):
+    mock_run.return_value = _completed(1, stdout="{}", stderr=stderr)
 
-    with pytest.raises(librarian.RateLimitedError):
-        librarian._yt_dlp(["--dump-json", "u"], timeout=60)
-
-    assert mock_run.call_count == 1
-
-
-@patch("subprocess.run")
-def test_yt_dlp_runs_a_failed_call_once(mock_run):
-    mock_run.return_value = _completed(1, stderr="generic failure")
-
-    with pytest.raises(librarian.YtDlpError, match="generic failure"):
+    with pytest.raises(error, match=stderr):
         librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
     assert mock_run.call_count == 1
@@ -62,16 +53,6 @@ def test_yt_dlp_runs_a_failed_call_once(mock_run):
 def test_yt_dlp_that_cannot_complete_is_a_yt_dlp_error(error):
     with patch("subprocess.run", side_effect=error), pytest.raises(librarian.YtDlpError):
         librarian._yt_dlp(["--dump-json", "u"], timeout=60)
-
-
-# --- download_audio rate limiting ---------------------------------------------
-
-@patch("subprocess.run")
-def test_download_audio_raises_rate_limited_error_on_429_stderr(mock_run):
-    mock_run.return_value = _completed(1, stderr="ERROR: HTTP Error 429: Too Many Requests")
-
-    with pytest.raises(librarian.RateLimitedError):
-        librarian.download_audio("https://youtu.be/v", Path("/tmp/fake"))
 
 
 # --- get_video_data rate limiting --------------------------------------------
@@ -289,8 +270,12 @@ def test_fetch_mode_writes_printed_json_to_cache(
 
 # --- CLI -------------------------------------------------------------
 
-def test_main_single_video_rate_limited_exits_1(monkeypatch):
-    process = MagicMock(side_effect=librarian.RateLimitedError("HTTP Error 429"))
+@pytest.mark.parametrize("error", [
+    librarian.RateLimitedError("HTTP Error 429"),
+    librarian.FlaggedChannelsConfigError("watchlist broken"),
+])
+def test_main_single_video_failure_exits_1_and_logs_it(error, monkeypatch, caplog):
+    process = MagicMock(side_effect=error)
     monkeypatch.setattr(librarian, "process_single_video", process)
     monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
 
@@ -299,6 +284,7 @@ def test_main_single_video_rate_limited_exits_1(monkeypatch):
 
     assert exc_info.value.code == 1
     assert process.call_count == 1
+    assert str(error) in caplog.text
 
 
 # --- broken flagged-channel watchlist ----------------------------------------
@@ -324,18 +310,6 @@ def test_save_with_broken_watchlist_raises_before_writing_anything(
 
     assert not list(save_env.library_root.glob("*.md"))
     assert not (save_env.library_root / "index.yaml").exists()
-
-
-def test_main_single_video_broken_watchlist_exits_1(monkeypatch, caplog):
-    process = MagicMock(side_effect=librarian.FlaggedChannelsConfigError("watchlist broken"))
-    monkeypatch.setattr(librarian, "process_single_video", process)
-    monkeypatch.setattr("sys.argv", ["librarian.py", "https://youtu.be/abc"])
-
-    with pytest.raises(SystemExit) as exc_info:
-        librarian.main()
-
-    assert exc_info.value.code == 1
-    assert "watchlist broken" in caplog.text
 
 
 def test_data_file_requires_analysis_file(monkeypatch):
