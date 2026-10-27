@@ -28,35 +28,18 @@ def flag_config(tmp_path, monkeypatch):
     return cfg
 
 
-def test_flagged_channel_matches_by_id(flag_config):
+@pytest.mark.parametrize("data, flagged", [
     # channel_id is the stable key; display name differs but ID matches.
-    data = {"channel": "Some Renamed Channel", "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw", "uploader_id": ""}
+    ({"channel": "Some Renamed Channel", "channel_id": "UCGq-a57w-aPwyi3pW7XLiHw", "uploader_id": ""}, True),
+    ({"channel": "x", "channel_id": "", "uploader_id": "@TheDiaryOfACEO"}, True),
+    # TikTok/Instagram uploader_id arrives without the '@' the config stores.
+    ({"channel": "x", "channel_id": "", "uploader_id": "thediaryofaceo"}, True),
+    ({"channel": "the diary of a ceo", "channel_id": "", "uploader_id": ""}, True),
+    ({"channel": "Your AI Guy", "channel_id": "UCsomethingelse", "uploader_id": "@YourAIGuy"}, False),
+])
+def test_flagged_channel_matching(flag_config, data, flagged):
     entry = check_flagged_channel(data)
-    assert entry is not None and entry["severity"] == "high"
-
-
-def test_flagged_channel_matches_by_handle(flag_config):
-    data = {"channel": "x", "channel_id": "", "uploader_id": "@TheDiaryOfACEO"}
-    entry = check_flagged_channel(data)
-    assert entry is not None and entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw"
-
-
-def test_flagged_channel_handle_match_ignores_at_prefix(flag_config):
-    # TikTok-style uploader_id arrives without the '@' the config stores.
-    data = {"channel": "x", "channel_id": "", "uploader_id": "thediaryofaceo"}
-    entry = check_flagged_channel(data)
-    assert entry is not None and entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw"
-
-
-def test_flagged_channel_matches_by_name_case_insensitive(flag_config):
-    data = {"channel": "the diary of a ceo", "channel_id": "", "uploader_id": ""}
-    entry = check_flagged_channel(data)
-    assert entry is not None and entry["severity"] == "high"
-
-
-def test_unflagged_channel_returns_none(flag_config):
-    data = {"channel": "Your AI Guy", "channel_id": "UCsomethingelse", "uploader_id": "@YourAIGuy"}
-    assert check_flagged_channel(data) is None
+    assert (entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw") if flagged else entry is None
 
 
 @pytest.mark.parametrize("severity, expected", [("high", "HIGH"), ("WaTcH", "WATCH")])
@@ -117,76 +100,25 @@ def test_non_mapping_config_raises(tmp_path, monkeypatch):
     with pytest.raises(librarian.FlaggedChannelsConfigError, match="YAML mapping"):
         check_flagged_channel({"channel": "x", "channel_id": "UCx", "uploader_id": ""})
 
-def test_clean_srt():
-    srt_content = """1
-00:00:01,000 --> 00:00:02,000
-Hello <b>World</b>
-
-2
-00:00:03,000 --> 00:00:04,000
-This is a test.
-
-This is a test.
-"""
-    cleaned = clean_srt(srt_content)
-    # Check timestamp removal
-    assert "00:00" not in cleaned
-    assert "-->" not in cleaned
-    # Check index removal
-    assert "1" not in cleaned.split()
-    # Check HTML stripping
-    assert "<b>" not in cleaned
-    assert "World" in cleaned
-    # Check deduplication
-    assert cleaned.count("This is a test.") == 1
-    # Check extra whitespace
-    assert "  " not in cleaned
-
-def test_clean_srt_complex():
-    srt = """1
-00:00:01,000 --> 00:00:02,000
-Line 1
-Line 1
-
-2
-00:00:02,000 --> 00:00:03,000
-Line 2
-<font color="red">Line 3</font>
-
-3
-00:00:03,000 --> 00:00:04,000
-Line 2
-"""
-    cleaned = clean_srt(srt)
-    # Deduplication across blocks
-    assert "Line 1 Line 2 Line 3 Line 2" in cleaned
-
 @pytest.mark.parametrize("srt,expected", [
     ("1\n00:00:01,000 --> 00:00:02,000\nHello", "Hello"),
-    ("1\n00:00:01,000 --> 00:00:02,000\n<b>Hi</b>", "Hi"),
+    # HTML tags stripped, repeated adjacent lines collapsed.
+    ("1\n00:00:01,000 --> 00:00:02,000\nHello <b>World</b>\n\n"
+     "2\n00:00:03,000 --> 00:00:04,000\nThis is a test.\n\nThis is a test.\n",
+     "Hello World This is a test."),
     ("1\n00:00:01,000 --> 00:00:02,000\nA\n1\n00:00:02,000 --> 00:00:03,000\nA", "A"),
+    # Dedup is adjacent-only: a line that recurs later is kept.
+    ("1\n00:00:01,000 --> 00:00:02,000\nLine 1\nLine 1\n\n"
+     "2\n00:00:02,000 --> 00:00:03,000\nLine 2\n<font color=\"red\">Line 3</font>\n\n"
+     "3\n00:00:03,000 --> 00:00:04,000\nLine 2\n",
+     "Line 1 Line 2 Line 3 Line 2"),
+    # VTT: WEBVTT/Kind/Language headers and dot timestamps.
+    ("WEBVTT\nKind: captions\nLanguage: en\n\n00:00:01.000 --> 00:00:02.000\nHello World\n\n"
+     "00:00:03.000 --> 00:00:04.000\nThis is TikTok.\n",
+     "Hello World This is TikTok."),
 ])
-def test_clean_srt_parameterized(srt, expected):
+def test_clean_srt(srt, expected):
     assert clean_srt(srt) == expected
-
-def test_clean_srt_vtt_format():
-    """Verify that VTT content (WEBVTT headers, dot timestamps) is properly cleaned."""
-    vtt_content = """WEBVTT
-Kind: captions
-Language: en
-
-00:00:01.000 --> 00:00:02.000
-Hello World
-
-00:00:03.000 --> 00:00:04.000
-This is TikTok.
-"""
-    cleaned = clean_srt(vtt_content)
-    assert "WEBVTT" not in cleaned
-    assert "Kind:" not in cleaned
-    assert "Language:" not in cleaned
-    assert "00:00" not in cleaned
-    assert cleaned == "Hello World This is TikTok."
 
 
 def test_get_video_data_returns_none_when_metadata_call_fails(fake_ytdlp):
@@ -282,17 +214,10 @@ def test_save_to_library_without_subdir_stays_flat(library_root):
     assert path.exists()
 
 
-def test_save_to_library_with_subdir_nests(library_root):
+def test_save_to_library_with_missing_subdir_creates_and_nests(library_root):
     path = librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="agentic-work")
     assert path.parent == library_root / "agentic-work"
-    assert path.exists()
     assert "body" in path.read_text()
-
-
-def test_save_to_library_creates_missing_subdir(library_root):
-    assert not (library_root / "brand-new").exists()
-    librarian.save_to_library(dict(VIDEO_STUB), "body", subdir="brand-new")
-    assert (library_root / "brand-new").is_dir()
 
 
 @pytest.mark.parametrize("hostile", ["../../etc", "..", "/", "../sibling", "a/../../b"])
@@ -355,11 +280,6 @@ def test_fact_check_reminder_path_is_cwd_independent(caplog, tmp_path, monkeypat
     with caplog.at_level("WARNING"):
         librarian.emit_fact_check_protocol_reminder()
     assert "NOT FOUND" not in caplog.text
-
-
-def test_protocol_file_exists_at_repo_root():
-    """The reminder points at this path; a rename must break a test, not just the docs."""
-    assert librarian.FACT_CHECK_PROTOCOL_PATH.is_file()
 
 
 @patch("scripts.librarian.extract_research_targets", return_value={})
@@ -462,20 +382,6 @@ def test_every_real_library_header_shape_is_detected(header):
     assert stats["total"] == 1
 
 
-def test_unverified_row_with_search_trail_is_not_counted_unsourced():
-    """The protocol REQUIRES an Unverified row to record what was searched, with no link.
-
-    Counting that as unsourced would penalise a report for complying, and a warning that
-    fires on compliant work is a warning people learn to ignore.
-    """
-    table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
-             "| 1 | x | Unverified | searched EIA, IEA, SEC filings; nothing primary |\n")
-    stats = librarian.audit_claim_sources(table)
-    assert stats["unsourced"] == 0, "a documented search trail is Unverified, not Unchecked"
-    assert stats["documented"] == 1
-    assert stats["ratio"] == 0.0
-
-
 @pytest.mark.parametrize("grade,waived", [
     ("Unverified", True),
     ("❓ Unverified", True),
@@ -491,8 +397,9 @@ def test_unverified_row_with_search_trail_is_not_counted_unsourced():
     ("Debunked, timing unverified", False),
 ])
 def test_only_a_pure_unverified_grade_waives_the_link(grade, waived):
-    """Substring-matching the grade cell waived composite grades — real content in
-    library/lance-breitstein/ row 12 hit exactly this."""
+    """The protocol requires an Unverified row to record its search trail with no link, so
+    that row must not count as unsourced. Substring-matching the grade cell also waived
+    composite grades — real content in library/lance-breitstein/ row 12 hit exactly this."""
     table = ("| # | Claim | Grade | Source |\n|---|---|---|---|\n"
              f"| 1 | x | {grade} | searched A, B; nothing primary |\n")
     stats = librarian.audit_claim_sources(table)
@@ -655,54 +562,21 @@ def _fields(metadata_json, url):
     return librarian._video_fields(json.loads(metadata_json), url, "")
 
 
-def test_platform_detection_instagram_inverts_handle_and_display_name():
-    """Instagram puts the @handle in 'channel' and the display name in 'uploader',
-    the opposite of TikTok, and its uploader_id is an opaque numeric account ID.
-    The handle must land in uploader_id so the flagged-channel watchlist matches."""
-    metadata = (
-        '{"extractor_key": "Instagram", "title": "Video by jarrenrocks",'
-        ' "channel": "jarrenrocks", "uploader": "Jarren Rocks",'
-        ' "uploader_id": "40055242682", "id": "DcnKaQaPHTw"}'
-    )
-    data = _fields(metadata, "https://www.instagram.com/reel/DcnKaQaPHTw/")
-
-    assert data["platform"] == "instagram"
-    assert data["channel"] == "Jarren Rocks"
-    assert data["uploader_id"] == "jarrenrocks"
-
-
-def test_platform_detection_tiktok_keeps_native_uploader_id():
-    metadata = (
-        '{"extractor_key": "TikTok", "title": "T", "channel": "Display Name",'
-        ' "uploader": "handle", "uploader_id": "handle", "id": "9"}'
-    )
-    data = _fields(metadata, "https://www.tiktok.com/@handle/video/9")
-
-    assert data["platform"] == "tiktok"
-    assert data["channel"] == "Display Name"
-    assert data["uploader_id"] == "handle"
-
-
-def test_platform_detection_youtube_keeps_native_uploader_id():
-    metadata = (
-        '{"extractor_key": "Youtube", "title": "T", "uploader": "Some Channel",'
-        ' "uploader_id": "@somechannel", "id": "abc"}'
-    )
-    data = _fields(metadata, "https://youtube.com/watch?v=abc")
-
-    assert data["platform"] == "youtube"
-    assert data["channel"] == "Some Channel"
-    assert data["uploader_id"] == "@somechannel"
-
-
-def test_instagram_handle_is_matchable_by_the_flagged_channel_watchlist(flag_config):
-    """The point of the uploader_id inversion: a flagged IG handle actually matches."""
-    flag_config.write_text(yaml.dump({"channels": [
-        {"handle": "@jarrenrocks", "reason": "test", "severity": "low"},
-    ]}))
-    data = {"channel": "Jarren Rocks", "channel_id": "", "uploader_id": "jarrenrocks"}
-
-    assert check_flagged_channel(data) is not None
+@pytest.mark.parametrize("metadata,url,expected", [
+    # Instagram puts the @handle in 'channel' and the display name in 'uploader', the
+    # opposite of TikTok, and its uploader_id is an opaque numeric account ID. The handle
+    # must land in uploader_id so the flagged-channel watchlist matches.
+    ({"extractor_key": "Instagram", "channel": "jarrenrocks", "uploader": "Jarren Rocks",
+      "uploader_id": "40055242682"},
+     "https://www.instagram.com/reel/DcnKaQaPHTw/", ("instagram", "Jarren Rocks", "jarrenrocks")),
+    ({"extractor_key": "TikTok", "channel": "Display Name", "uploader": "handle", "uploader_id": "handle"},
+     "https://www.tiktok.com/@handle/video/9", ("tiktok", "Display Name", "handle")),
+    ({"extractor_key": "Youtube", "uploader": "Some Channel", "uploader_id": "@somechannel"},
+     "https://youtube.com/watch?v=abc", ("youtube", "Some Channel", "@somechannel")),
+])
+def test_platform_detection_maps_channel_and_handle(metadata, url, expected):
+    data = _fields(json.dumps({"title": "T", "id": "abc", **metadata}), url)
+    assert (data["platform"], data["channel"], data["uploader_id"]) == expected
 
 
 @pytest.mark.parametrize("channel", [None, "", "   "])
