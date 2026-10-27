@@ -39,7 +39,10 @@ def flag_config(tmp_path, monkeypatch):
 ])
 def test_flagged_channel_matching(flag_config, data, flagged):
     entry = check_flagged_channel(data)
-    assert (entry["channel_id"] == "UCGq-a57w-aPwyi3pW7XLiHw") if flagged else entry is None
+    if flagged:
+        assert (entry["channel_id"], entry["severity"]) == ("UCGq-a57w-aPwyi3pW7XLiHw", "high")
+    else:
+        assert entry is None
 
 
 @pytest.mark.parametrize("severity, expected", [("high", "HIGH"), ("WaTcH", "WATCH")])
@@ -405,6 +408,7 @@ def test_only_a_pure_unverified_grade_waives_the_link(grade, waived):
     stats = librarian.audit_claim_sources(table)
     assert stats["documented"] == (1 if waived else 0)
     assert stats["unsourced"] == (0 if waived else 1)
+    assert stats["ratio"] == (0.0 if waived else 1.0)
 
 
 def test_unverified_grade_with_empty_source_is_still_unchecked():

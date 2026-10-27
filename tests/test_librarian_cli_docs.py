@@ -52,3 +52,9 @@ def test_every_documented_flag_is_a_real_parser_option():
             f"{token} appears in librarian.__doc__ but is not a build_parser() option"
         )
 
+
+def test_help_contains_docstring_first_line():
+    first_line = librarian.__doc__.strip().splitlines()[0].strip()
+    assert first_line, "module docstring must have a non-empty first line"
+    assert first_line in librarian.build_parser().format_help()
+

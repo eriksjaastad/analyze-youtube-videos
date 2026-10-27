@@ -35,11 +35,15 @@ def test_is_rate_limited(stderr, limited):
 
 # --- _yt_dlp ------------------------------------------------------------------
 
+@pytest.mark.parametrize("stderr, error", [
+    ("ERROR: HTTP Error 429: Too Many Requests", librarian.RateLimitedError),
+    ("generic failure", librarian.YtDlpError),
+])
 @patch("subprocess.run")
-def test_yt_dlp_fails_fast_on_429(mock_run):
-    mock_run.return_value = _completed(1, stderr="ERROR: HTTP Error 429: Too Many Requests")
+def test_yt_dlp_failed_call_raises_once_with_its_stderr(mock_run, stderr, error):
+    mock_run.return_value = _completed(1, stdout="{}", stderr=stderr)
 
-    with pytest.raises(librarian.RateLimitedError):
+    with pytest.raises(error, match=stderr):
         librarian._yt_dlp(["--dump-json", "u"], timeout=60)
 
     assert mock_run.call_count == 1
