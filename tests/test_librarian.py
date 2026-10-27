@@ -283,6 +283,8 @@ def test_fact_check_reminder_path_is_cwd_independent(caplog, tmp_path, monkeypat
     with caplog.at_level("WARNING"):
         librarian.emit_fact_check_protocol_reminder()
     assert "NOT FOUND" not in caplog.text
+    # The reminder only checks exists(); a rename to a directory must still break a test.
+    assert librarian.FACT_CHECK_PROTOCOL_PATH.is_file()
 
 
 @patch("scripts.librarian.extract_research_targets", return_value={})
