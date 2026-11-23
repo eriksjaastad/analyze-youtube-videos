@@ -140,6 +140,13 @@ first ten lines.** Not a disclaimer for cover — a load-bearing status. Provisi
 analyst patterns, do not get cited by later reports, and are not represented to Erik as fact-checks.
 Say out loud what blocked the fan-out, so it can be unblocked.
 
+**Every grade the second pass changes goes into the answer key.** This is how the fleet learns from
+our mistakes. ai-memory replays the key to test protocol changes (#9146). For each changed or filled
+grade, run this in `~/projects/ai-memory`:
+`uv run python -m benchmarks.fact_check.key add '<json>'`. The fields are report, row, claim,
+first_grade, final_grade, kind, direction, failure_mode, stage, source and why. Name the failure
+mode (F1–F7) and the stage (find or read) when you know them.
+
 ---
 
 ## Rule 0 — the source goes in the row
