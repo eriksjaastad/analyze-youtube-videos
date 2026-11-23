@@ -165,6 +165,12 @@ report carried 40+ links and **49 of 49 claim rows had none bound to them.**
 - **An empty Source cell means the grade is `⚪ Unchecked`.** Not "I'll add it later" — the
   emptiness *is* the grade. This makes the omission self-reporting.
 - **Link the document you actually read**, not a search page and not a summary of it.
+- **Put the evidence quote in the Source cell, beside its link:** `[PFN factsheet](url) "Employees:
+  Approx. 450"`. Copy the words from the document, not a paraphrase. Before filing, run
+  `uv run scripts/verify_quotes.py <report>`. It fetches each link and checks the quote is on the
+  page. A `not_found` or `unreachable` row is fixed (right link, exact words) or set to
+  `⚪ Unchecked`. Paywalled or script-built pages can miss. Say so in the Note rather than
+  dropping the quote.
 - **`❓ Unverified` still needs a Source cell**, holding what you searched — "searched X, Y, Z;
   no primary source found." That is the difference between Unverified and Unchecked, made visible.
 - Keep the bottom-of-report `## Sources` section as a reading list. It is a convenience, never
