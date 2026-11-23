@@ -909,6 +909,8 @@ def emit_fact_check_protocol_reminder() -> None:
         logger.warning("[fact-check] !! FACT_CHECK_PROTOCOL.md NOT FOUND at repo root !!")
     logger.warning("[fact-check]  0. SOURCE LINK GOES IN THE CLAIM ROW. A bulk source list at")
     logger.warning("[fact-check]     the bottom does NOT count. Empty source cell == Unchecked.")
+    logger.warning("[fact-check]     Quote the source's words in that cell too; before filing run")
+    logger.warning("[fact-check]     scripts/verify_quotes.py <report> (link loads, quote present).")
     logger.warning("[fact-check]  1. No grade from memory. Unsearched == Unchecked.")
     logger.warning("[fact-check]  2. Fetch the primary source. A search snippet is not evidence.")
     logger.warning("[fact-check]  3. Search the speaker's framing and units FIRST, not yours.")
