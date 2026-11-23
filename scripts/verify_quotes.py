@@ -46,17 +46,21 @@ PAUSE_S = 0.5
 _QUOTE_RE = re.compile(
     r'(?:^|(?<=[\s(\[:*]))(?:"(\S[^"\n]{%d,398}\S)"|“(\S[^”\n]{%d,398}\S)”)(?=$|[\s.,;:)\]!?*])'
     % (MIN_QUOTE - 2, MIN_QUOTE - 2))
-_LINK_HREF_RE = re.compile(r'\]\((https?://[^)\s]+)\)')
+# One level of balanced parentheses, so Wikipedia-style URLs aren't cut at the first ')'.
+_LINK_HREF_RE = re.compile(r'\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)')
 _BARE_URL_RE = re.compile(r'(?<!\()https?://[^\s)\]|>]+')
 _ELLIPSIS_RE = re.compile(r'\s*(?:…|\.\.\.)\s*')
 _TAG_RE = re.compile(r'<[^>]+>')
 _DROP_BLOCKS_RE = re.compile(r'<(script|style|noscript)\b.*?</\1>', re.S | re.I)
-_NON_WORD_RE = re.compile(r'[^0-9a-z]+')
+_NON_WORD_RE = re.compile(r'[\W_]+')
 
 
 def normalize(text: str) -> str:
-    """Lowercase, fold Unicode, and reduce all punctuation and spacing to single spaces."""
-    text = unicodedata.normalize("NFKC", text).lower()
+    """Casefold, NFKC-fold, and reduce punctuation and spacing to single spaces.
+
+    Letters in any script survive, so a Cyrillic or CJK quote is compared, not erased.
+    """
+    text = unicodedata.normalize("NFKC", text).casefold()
     return _NON_WORD_RE.sub(" ", text).strip()
 
 
@@ -107,10 +111,15 @@ def extract_rows(report: str) -> List[Dict[str, Any]]:
 
 
 def quote_in(quote: str, page: str) -> bool:
-    """True when every ellipsis-separated fragment of the quote appears in the page."""
+    """True when every ellipsis-separated fragment of the quote appears in the page.
+
+    Fragments shorter than MIN_QUOTE are ignored; if nothing that long is left, the whole
+    quote must appear. A quote that normalizes to nothing never matches: an empty string
+    is in every page.
+    """
     parts = [normalize(p) for p in _ELLIPSIS_RE.split(quote)]
     parts = [p for p in parts if len(p) >= MIN_QUOTE] or [normalize(quote)]
-    return all(p in page for p in parts)
+    return all(parts) and all(p in page for p in parts)
 
 
 def html_to_text(body: str) -> str:
@@ -172,6 +181,8 @@ def check(rows: List[Dict[str, Any]],
                 except FetchError as exc:
                     errors[url] = str(exc)
                     text = None
+                if text is not None and not normalize(text):
+                    errors[url] = "loaded, but no text extracted (script-built page or image PDF?)"
                 cache[url] = normalize(text) if text else None
                 if pause:
                     time.sleep(pause)

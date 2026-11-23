@@ -88,3 +88,23 @@ def test_fetch_errors_are_reported_with_the_row():
     result = vq.check(rows, fetch, 0)[0]
     assert result["status"] == "unreachable"
     assert result["errors"] == ["https://a.example/doc: HTTPError: 403 Forbidden"]
+
+
+def test_non_latin_quotes_are_compared_not_erased():
+    quote = "Это предложение на русском языке"
+    assert not vq.quote_in(quote, vq.normalize("Totally unrelated english page text here."))
+    assert vq.quote_in(quote, vq.normalize("Вот: «Это предложение на русском языке», да."))
+    assert vq.normalize("日本の人口は減少している") != ""
+    assert not vq.quote_in("!!! ... ???", vq.normalize("any page at all"))
+
+
+def test_urls_with_parentheses_are_kept_whole():
+    report = ('| # | Claim | Source |\n|---|---|---|\n'
+              '| 1 | x | [Wiki](https://en.wikipedia.org/wiki/Mercury_(planet)) "the smallest planet" |\n')
+    assert vq.extract_rows(report)[0]["urls"] == ["https://en.wikipedia.org/wiki/Mercury_(planet)"]
+
+
+def test_page_with_no_text_says_so():
+    result = vq.check(vq.extract_rows(REPORT)[:1], lambda u: "   ", 0)[0]
+    assert result["status"] == "unreachable"
+    assert "no text extracted" in result["errors"][0]
