@@ -4,6 +4,7 @@ import threading
 from collections import Counter
 
 import pytest
+from citecheck import Fetcher
 from pypdf import PdfWriter
 
 from scripts import verify_quotes as vq
@@ -60,7 +61,7 @@ def base():
 
 
 def _fetcher():
-    return vq.OnceFetcher("test-agent/1.0", min_interval=0)
+    return Fetcher("test-agent/1.0", min_interval=0, cache=True)
 
 
 def _report(base):

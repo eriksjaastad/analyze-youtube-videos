@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-11-20T05:53:24.477105Z"
+exclude-newer = "2026-11-20T06:04:07.128363Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -28,7 +28,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "citecheck", git = "https://github.com/eriksjaastad/citecheck?rev=v0.1.1" },
+    { name = "citecheck", git = "https://github.com/eriksjaastad/citecheck?rev=v0.1.2" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = "==1.2.1" },
     { name = "pypdf", extras = ["crypto"], specifier = "==7.1.1" },
     { name = "pyyaml", specifier = "==6.0.3" },
@@ -164,8 +164,8 @@ wheels = [
 
 [[package]]
 name = "citecheck"
-version = "0.1.1"
-source = { git = "https://github.com/eriksjaastad/citecheck?rev=v0.1.1#2b20c20ff1e241d8b5684965ab460691350b8f13" }
+version = "0.1.2"
+source = { git = "https://github.com/eriksjaastad/citecheck?rev=v0.1.2#9176839905440c434dc68843f8f6f24bf89ac056" }
 dependencies = [
     { name = "pypdf", extra = ["crypto"] },
 ]
