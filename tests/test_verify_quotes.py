@@ -1,10 +1,22 @@
 import http.server
+import io
 import threading
+from collections import Counter
 
 import pytest
-from citecheck import Fetcher
+from pypdf import PdfWriter
 
 from scripts import verify_quotes as vq
+
+
+def _locked_pdf():
+    writer = PdfWriter()
+    writer.add_blank_page(612, 792)
+    writer.encrypt("secret")
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
 
 PAGES = {
     "/doc": (200, b"<p>Employees: Approx. 450 people work here. Growth was 40% last year.</p>"),
@@ -12,12 +24,21 @@ PAGES = {
     "/paywall": (403, b"no"),
     "/gone": (404, b""),
     "/blank": (200, b"<html><script>render()</script></html>"),
+    "/legal": (200, b"<p>Police found illegal activity. The index moved -5.5% in May.</p>"),
+    "/broken.pdf": (200, b"%PDF-1.4 this is not really a pdf"),
+    "/locked.pdf": (200, _locked_pdf()),
 }
+HITS = Counter()
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        HITS[self.path] += 1
         code, body = PAGES.get(self.path, (404, b""))
+        if self.path == "/once" and HITS[self.path] > 1:  # rate-limits the second request
+            code, body = 429, b""
+        elif self.path == "/once":
+            code, body = 200, b"<p>Employees: Approx. 450 people work here.</p>"
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -37,7 +58,7 @@ def base():
 
 
 def _fetcher():
-    return Fetcher("test-agent/1.0", min_interval=0)
+    return vq.OnceFetcher("test-agent/1.0", min_interval=0)
 
 
 def _report(base):
@@ -75,10 +96,38 @@ def test_failures_say_why(base):
     assert results["8"]["errors"] == []
 
 
-def test_whole_word_matching_rejects_a_digit_prefix(base):
-    report = ("| # | Claim | Source |\n|---|---|---|\n"
-              f'| 1 | x | [s]({base}/doc) "Growth was 4% last year" |\n')
-    assert vq.check(vq.extract_rows(report), _fetcher())[0]["status"] == "not_found"
+def _statuses(base, *cells):
+    report = "| # | Claim | Source |\n|---|---|---|\n" + "".join(
+        f"| {n} | x | {cell.format(base=base)} |\n" for n, cell in enumerate(cells, 1))
+    return [r["status"] for r in vq.check(vq.extract_rows(report), _fetcher())]
+
+
+def test_matching_keeps_whole_words_and_signs(base):
+    # The old matcher passed both misses: it found "legal" inside "illegal" and dropped signs.
+    assert _statuses(base,
+                     '[s]({base}/legal) "legal activity"',
+                     '[s]({base}/legal) "index moved 5.5% in May"',
+                     '[s]({base}/legal) "found illegal activity"',
+                     '[s]({base}/legal) "index moved -5.5% in May"',
+                     ) == ["not_found", "not_found", "supported", "supported"]
+
+
+def test_bad_pdfs_are_unreachable_and_the_run_goes_on(base):
+    assert _statuses(base,
+                     '[s]({base}/broken.pdf) [t]({base}/doc) "Approx. 450 people work"',
+                     '[s]({base}/locked.pdf) "words inside a locked file"',
+                     '[s]({base}/doc) "Employees: Approx. 450 people"',
+                     ) == ["supported", "unreachable", "supported"]
+
+
+def test_each_source_is_fetched_once_per_run(base):
+    HITS.clear()
+    assert _statuses(base,
+                     '[s]({base}/once) "Employees: Approx. 450"',
+                     '[s]({base}/once) "this sentence is not there" "Approx. 450 people work"',
+                     '[s]({base}/once) "Approx. 450 people"',
+                     ) == ["supported", "supported", "supported"]
+    assert HITS["/once"] == 1
 
 
 def test_only_source_cell_quotes_are_evidence(base):

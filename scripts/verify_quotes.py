@@ -29,7 +29,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from citecheck import Citation, EmptySourceError, Fetcher, Status, check_quote
+from citecheck import Citation, EmptySourceError, Fetcher, FetchError, Status, check_quote
+from pypdf.errors import PyPdfError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.librarian import _CLAIM_HEADER, _FENCE_RE, _TABLE_SEP_RE, _split_row  # noqa: E402
@@ -94,6 +95,32 @@ def extract_rows(report: str) -> List[Dict[str, Any]]:
     return rows
 
 
+class OnceFetcher(Fetcher):
+    """A citecheck Fetcher that downloads each URL once per run.
+
+    citecheck fetches per citation. A report quotes the same source in many rows, and a
+    site that rate-limits the second request would turn a supported row into blocked.
+    """
+
+    def __init__(self, user_agent: str, **kwargs: Any) -> None:
+        super().__init__(user_agent, **kwargs)
+        self._seen: Dict[tuple, Any] = {}
+        self.requests = 0
+
+    def _get(self, url: str, *, read_body: bool = True):
+        key = (url, read_body)
+        if key not in self._seen:
+            self.requests += 1
+            try:
+                self._seen[key] = super()._get(url, read_body=read_body)
+            except FetchError as exc:
+                self._seen[key] = exc
+        hit = self._seen[key]
+        if isinstance(hit, FetchError):
+            raise hit
+        return hit
+
+
 def _one(url: str, quote: str, fetcher: Fetcher) -> tuple[str, str]:
     """citecheck's verdict on one quote in one source, as (status, reason)."""
     try:
@@ -102,6 +129,8 @@ def _one(url: str, quote: str, fetcher: Fetcher) -> tuple[str, str]:
         return "unreachable", "loaded, but no text extracted (script-built page or image PDF?)"
     except ValueError as exc:  # undecodable page, bad URL
         return "unreachable", str(exc)
+    except PyPdfError as exc:  # damaged or password-protected PDF
+        return "unreachable", f"PDF unreadable: {type(exc).__name__}: {exc}"
     status = {Status.SUPPORTED: "supported", Status.NOT_FOUND: "not_found",
               Status.BLOCKED: "blocked"}.get(result.status, "unreachable")
     return status, result.reason
@@ -144,7 +173,7 @@ def main(argv: Optional[List[str]] = None, fetcher: Optional[Fetcher] = None) ->
     parser.add_argument("report", type=Path)
     args = parser.parse_args(argv)
     rows = extract_rows(args.report.read_text(encoding="utf-8"))
-    results = check(rows, fetcher or Fetcher(USER_AGENT))
+    results = check(rows, fetcher or OnceFetcher(USER_AGENT))
     counts: Dict[str, int] = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1

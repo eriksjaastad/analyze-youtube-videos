@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-11-20T05:28:25.928983Z"
+exclude-newer = "2026-11-20T05:37:19.205865Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -12,6 +12,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "citecheck" },
+    { name = "pypdf" },
     { name = "pyyaml" },
 ]
 
@@ -29,6 +30,7 @@ dev = [
 requires-dist = [
     { name = "citecheck", git = "https://github.com/eriksjaastad/citecheck?rev=v0.1.0" },
     { name = "faster-whisper", marker = "extra == 'whisper'", specifier = "==1.2.1" },
+    { name = "pypdf", specifier = "==7.1.1" },
     { name = "pyyaml", specifier = "==6.0.3" },
 ]
 provides-extras = ["whisper"]
