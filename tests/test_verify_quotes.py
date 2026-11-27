@@ -176,3 +176,15 @@ def test_each_failing_outcome_alone_fails_the_gate(base, tmp_path, cell, code):
 
 def test_footnote_markers_do_not_glue_to_words(base):
     assert _statuses(base, '[s]({base}/refs) "The treatment reduced mortality in adults"') == ["supported"]
+
+
+def test_main_fetches_each_source_once_per_run(base, tmp_path):
+    path = tmp_path / "r.md"
+    path.write_text("| # | Claim | Source |\n|---|---|---|\n" + "".join(
+        f'| {n} | x | [s]({base}/once) "Employees: Approx. 450 people" |\n' for n in (1, 2, 3)))
+    HITS.clear()
+    assert vq.main([str(path)]) == 0
+    assert HITS["/once"] == 1
+    # A new run starts with no cache, so it asks again (and /once now answers 429).
+    assert vq.main([str(path)]) == 1
+    assert HITS["/once"] == 2
