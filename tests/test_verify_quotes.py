@@ -156,3 +156,16 @@ def test_main_exit_code(base, tmp_path):
     assert vq.main([str(path)], _fetcher()) == 1
     path.write_text(_report(base).split("\n| 2 |")[0] + "\n")
     assert vq.main([str(path)], _fetcher()) == 0
+
+
+@pytest.mark.parametrize("cell, code", [
+    ('[s]({base}/x) "this sentence is not there"', 1),       # not_found
+    ('[s]({base}/paywall) "words behind the wall"', 1),       # blocked
+    ('[s]({base}/gone) "a quote from a dead page"', 1),       # unreachable
+    ('[s]({base}/doc) "Employees: Approx. 450 people"', 0),   # supported
+    ('[s]({base}/doc)', 0),                                    # no_quote
+])
+def test_each_failing_outcome_alone_fails_the_gate(base, tmp_path, cell, code):
+    path = tmp_path / "r.md"
+    path.write_text(f"| # | Claim | Source |\n|---|---|---|\n| 1 | x | {cell.format(base=base)} |\n")
+    assert vq.main([str(path)], _fetcher()) == code
