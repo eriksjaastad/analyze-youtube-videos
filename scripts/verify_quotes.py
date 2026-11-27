@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from citecheck import Citation, EmptySourceError, Fetcher, FetchError, Status, check_quote
+from citecheck import Citation, EmptySourceError, Fetcher, Status, check_quote
 from pypdf.errors import PyPdfError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -95,33 +95,6 @@ def extract_rows(report: str) -> List[Dict[str, Any]]:
     return rows
 
 
-class OnceFetcher(Fetcher):
-    """A citecheck Fetcher that downloads each URL once per run.
-
-    citecheck fetches per citation. A report quotes the same source in many rows, and a
-    site that rate-limits the second request would turn a supported row into blocked.
-    TODO(#9184): drop this subclass when citecheck ships a public fetch cache.
-    """
-
-    def __init__(self, user_agent: str, **kwargs: Any) -> None:
-        super().__init__(user_agent, **kwargs)
-        self._seen: Dict[tuple, Any] = {}
-        self.requests = 0
-
-    def _get(self, url: str, *, read_body: bool = True):
-        key = (url, read_body)
-        if key not in self._seen:
-            self.requests += 1
-            try:
-                self._seen[key] = super()._get(url, read_body=read_body)
-            except FetchError as exc:
-                self._seen[key] = exc
-        hit = self._seen[key]
-        if isinstance(hit, FetchError):
-            raise hit
-        return hit
-
-
 def _one(url: str, quote: str, fetcher: Fetcher) -> tuple[str, str]:
     """citecheck's verdict on one quote in one source, as (status, reason)."""
     try:
@@ -174,7 +147,8 @@ def main(argv: Optional[List[str]] = None, fetcher: Optional[Fetcher] = None) ->
     parser.add_argument("report", type=Path)
     args = parser.parse_args(argv)
     rows = extract_rows(args.report.read_text(encoding="utf-8"))
-    results = check(rows, fetcher or OnceFetcher(USER_AGENT))
+    # cache=True: each source is fetched once per run, however many rows quote it.
+    results = check(rows, fetcher or Fetcher(USER_AGENT, cache=True))
     counts: Dict[str, int] = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
