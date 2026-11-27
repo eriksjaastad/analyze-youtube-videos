@@ -25,6 +25,8 @@ PAGES = {
     "/gone": (404, b""),
     "/blank": (200, b"<html><script>render()</script></html>"),
     "/legal": (200, b"<p>Police found illegal activity. The index moved -5.5% in May.</p>"),
+    "/refs": (200, b'<p>The treatment reduced mortality<sup><a href="#ref1" role="doc-noteref">1</a>'
+                  b'</sup> in adults.</p>'),
     "/broken.pdf": (200, b"%PDF-1.4 this is not really a pdf"),
     "/locked.pdf": (200, _locked_pdf()),
 }
@@ -169,3 +171,7 @@ def test_each_failing_outcome_alone_fails_the_gate(base, tmp_path, cell, code):
     path = tmp_path / "r.md"
     path.write_text(f"| # | Claim | Source |\n|---|---|---|\n| 1 | x | {cell.format(base=base)} |\n")
     assert vq.main([str(path)], _fetcher()) == code
+
+
+def test_footnote_markers_do_not_glue_to_words(base):
+    assert _statuses(base, '[s]({base}/refs) "The treatment reduced mortality in adults"') == ["supported"]
