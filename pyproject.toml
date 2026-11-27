@@ -16,4 +16,4 @@ whisper = ["faster-whisper==1.2.1"]
 dev = ["pytest==9.0.2"]
 
 [tool.uv.sources]
-citecheck = { git = "https://github.com/eriksjaastad/citecheck", rev = "v0.2.0" }
+citecheck = { git = "https://github.com/eriksjaastad/citecheck", rev = "v0.2.1" }
