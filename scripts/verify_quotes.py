@@ -100,6 +100,7 @@ class OnceFetcher(Fetcher):
 
     citecheck fetches per citation. A report quotes the same source in many rows, and a
     site that rate-limits the second request would turn a supported row into blocked.
+    TODO(#9184): drop this subclass when citecheck ships a public fetch cache.
     """
 
     def __init__(self, user_agent: str, **kwargs: Any) -> None:
