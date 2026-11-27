@@ -2,43 +2,41 @@
 
 FACT_CHECK_PROTOCOL.md F1 (graded from a snippet) and F3 (graded from memory) leave the
 same trace: a claim row cites a URL, but the words the grade rests on are not in it.
-This script fetches every source URL in a report's claim tables and looks for the row's
-evidence quote in the page text. The evidence quote sits in the Source cell beside its
-link, "..." or “...”, 12+ characters: [PFN factsheet](url) "Employees: Approx. 450".
+This script reads the claim tables of a report and hands every source URL and evidence
+quote to citecheck, which fetches the page and does the matching. The evidence quote
+sits in the Source cell beside its link, "..." or “...”, 12+ characters:
+[PFN factsheet](url) "Employees: Approx. 450".
 
 Per row with a source link:
   supported   a quoted passage was found in a fetched source
-  not_found   sources loaded, but none contains any quoted passage
-  unreachable no source loaded (dead link, paywall, block, unreadable PDF)
+  not_found   a source was read whole, and no quoted passage is in any source
+  blocked     the sources refused us (401, 402, 403, 429, 451): paywall or bot wall
+  unreachable no source was read (dead link, timeout, script-built page, image PDF)
   no_quote    the Source cell quotes nothing, so there is nothing to check
 
-Exits 1 when any row is not_found or unreachable. Fix the source or the quote, or set
-the grade to Unchecked, before filing. A miss is a prompt to look, not proof the grade
-is wrong: paywalls and script-rendered pages also land here.
+Matching is citecheck's: whole words, with signs, decimals and percent kept, so "4%"
+is not in "40%". Exits 1 when any row is not_found, blocked or unreachable. Fix the
+source or the quote, or set the grade to Unchecked, before filing. A miss is a prompt
+to look, not proof the grade is wrong.
 
     uv run scripts/verify_quotes.py library/<report>.md
 """
 from __future__ import annotations
 
 import argparse
-import html
 import re
-import subprocess
 import sys
-import tempfile
-import time
-import unicodedata
-import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+from citecheck import Citation, EmptySourceError, Fetcher, FetchError, Status, check_quote
+from pypdf.errors import PyPdfError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.librarian import _CLAIM_HEADER, _FENCE_RE, _TABLE_SEP_RE, _split_row  # noqa: E402
 
 USER_AGENT = "research-reader/1.0"
-MAX_BYTES = 8 * 1024 * 1024
 MIN_QUOTE = 12
-PAUSE_S = 0.5
 
 # A quote opens after a space, bracket or cell start and closes before a space,
 # punctuation or cell end, and its text neither starts nor ends with a space. That stops a
@@ -49,19 +47,6 @@ _QUOTE_RE = re.compile(
 # One level of balanced parentheses, so Wikipedia-style URLs aren't cut at the first ')'.
 _LINK_HREF_RE = re.compile(r'\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)')
 _BARE_URL_RE = re.compile(r'(?<!\()https?://[^\s)\]|>]+')
-_ELLIPSIS_RE = re.compile(r'\s*(?:…|\.\.\.)\s*')
-_TAG_RE = re.compile(r'<[^>]+>')
-_DROP_BLOCKS_RE = re.compile(r'<(script|style|noscript)\b.*?</\1>', re.S | re.I)
-_NON_WORD_RE = re.compile(r'[\W_]+')
-
-
-def normalize(text: str) -> str:
-    """Casefold, NFKC-fold, and reduce punctuation and spacing to single spaces.
-
-    Letters in any script survive, so a Cyrillic or CJK quote is compared, not erased.
-    """
-    text = unicodedata.normalize("NFKC", text).casefold()
-    return _NON_WORD_RE.sub(" ", text).strip()
 
 
 def extract_rows(report: str) -> List[Dict[str, Any]]:
@@ -110,110 +95,95 @@ def extract_rows(report: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def quote_in(quote: str, page: str) -> bool:
-    """True when every ellipsis-separated fragment of the quote appears in the page.
+class OnceFetcher(Fetcher):
+    """A citecheck Fetcher that downloads each URL once per run.
 
-    Fragments shorter than MIN_QUOTE are ignored; if nothing that long is left, the whole
-    quote must appear. A quote that normalizes to nothing never matches: an empty string
-    is in every page.
+    citecheck fetches per citation. A report quotes the same source in many rows, and a
+    site that rate-limits the second request would turn a supported row into blocked.
     """
-    parts = [normalize(p) for p in _ELLIPSIS_RE.split(quote)]
-    parts = [p for p in parts if len(p) >= MIN_QUOTE] or [normalize(quote)]
-    return all(parts) and all(p in page for p in parts)
+
+    def __init__(self, user_agent: str, **kwargs: Any) -> None:
+        super().__init__(user_agent, **kwargs)
+        self._seen: Dict[tuple, Any] = {}
+        self.requests = 0
+
+    def _get(self, url: str, *, read_body: bool = True):
+        key = (url, read_body)
+        if key not in self._seen:
+            self.requests += 1
+            try:
+                self._seen[key] = super()._get(url, read_body=read_body)
+            except FetchError as exc:
+                self._seen[key] = exc
+        hit = self._seen[key]
+        if isinstance(hit, FetchError):
+            raise hit
+        return hit
 
 
-def html_to_text(body: str) -> str:
-    """Visible text of an HTML page: scripts and styles dropped, tags removed, entities decoded."""
-    return html.unescape(_TAG_RE.sub(" ", _DROP_BLOCKS_RE.sub(" ", body)))
-
-
-class FetchError(Exception):
-    """A source could not be read; the message says why and is printed with the row."""
-
-
-def _pdf_text(data: bytes) -> str:
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
-        f.write(data)
-        f.flush()
-        try:
-            out = subprocess.run(["pdftotext", "-layout", "-q", f.name, "-"], capture_output=True,
-                                 timeout=60, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise FetchError(f"pdftotext failed: {exc}") from exc
-    if out.returncode != 0:
-        raise FetchError(f"pdftotext exit {out.returncode}")
-    return out.stdout.decode("utf-8", "replace")
-
-
-def fetch_text(url: str) -> str:
-    """Page text for a URL (HTML stripped, PDF extracted). Raises FetchError if unreadable."""
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def _one(url: str, quote: str, fetcher: Fetcher) -> tuple[str, str]:
+    """citecheck's verdict on one quote in one source, as (status, reason)."""
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = resp.read(MAX_BYTES)
-            ctype = resp.headers.get("Content-Type", "")
-    except Exception as exc:
-        raise FetchError(f"{type(exc).__name__}: {exc}") from exc
-    if data[:4] == b"%PDF" or "pdf" in ctype:
-        return _pdf_text(data)
-    return html_to_text(data.decode("utf-8", "replace"))
+        result = check_quote(Citation(source=url, quote=quote), network=True, fetcher=fetcher)
+    except EmptySourceError:
+        return "unreachable", "loaded, but no text extracted (script-built page or image PDF?)"
+    except ValueError as exc:  # undecodable page, bad URL
+        return "unreachable", str(exc)
+    except PyPdfError as exc:  # damaged or password-protected PDF
+        return "unreachable", f"PDF unreadable: {type(exc).__name__}: {exc}"
+    status = {Status.SUPPORTED: "supported", Status.NOT_FOUND: "not_found",
+              Status.BLOCKED: "blocked"}.get(result.status, "unreachable")
+    return status, result.reason
 
 
-def check(rows: List[Dict[str, Any]],
-          fetch: Callable[[str], Optional[str]] = fetch_text,
-          pause: float = PAUSE_S) -> List[Dict[str, Any]]:
-    """Attach a status to every row that cites a source. Each URL is fetched once."""
-    cache: Dict[str, Optional[str]] = {}
-    errors: Dict[str, str] = {}
+# When a row's sources disagree, the best outcome wins: one supporting source is enough,
+# and a source read whole without the quote outranks one we could not read.
+_RANK = ("supported", "not_found", "blocked", "unreachable")
+
+
+def check(rows: List[Dict[str, Any]], fetcher: Fetcher) -> List[Dict[str, Any]]:
+    """Attach a status to every row that cites a source."""
     results = []
     for row in rows:
         urls, quotes = row["urls"], row["quotes"]
         if not urls:
             continue
         if not quotes:
-            results.append({**row, "status": "no_quote"})
+            results.append({**row, "status": "no_quote", "errors": []})
             continue
-        pages = []
+        best, errors = "unreachable", []
         for url in urls:
-            if url not in cache:
-                try:
-                    text = fetch(url)
-                except FetchError as exc:
-                    errors[url] = str(exc)
-                    text = None
-                if text is not None and not normalize(text):
-                    errors[url] = "loaded, but no text extracted (script-built page or image PDF?)"
-                cache[url] = normalize(text) if text else None
-                if pause:
-                    time.sleep(pause)
-            if cache[url]:
-                pages.append(cache[url])
-        if not pages:
-            status = "unreachable"
-        elif any(quote_in(q, p) for q in quotes for p in pages):
-            status = "supported"
-        else:
-            status = "not_found"
-        results.append({**row, "status": status,
-                        "errors": [f"{u}: {errors[u]}" for u in urls if u in errors]})
+            for quote in quotes:
+                status, reason = _one(url, quote, fetcher)
+                if status in ("blocked", "unreachable"):
+                    errors.append(f"{url}: {reason}")
+                if _RANK.index(status) < _RANK.index(best):
+                    best = status
+                if best == "supported":
+                    break
+            if best == "supported":
+                break
+        results.append({**row, "status": best,
+                        "errors": list(dict.fromkeys(errors)) if best != "supported" else []})
     return results
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[List[str]] = None, fetcher: Optional[Fetcher] = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("report", type=Path)
     args = parser.parse_args(argv)
-    results = check(extract_rows(args.report.read_text(encoding="utf-8")), fetch_text, PAUSE_S)
+    rows = extract_rows(args.report.read_text(encoding="utf-8"))
+    results = check(rows, fetcher or OnceFetcher(USER_AGENT))
     counts: Dict[str, int] = {}
     for r in results:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-        if r["status"] in ("not_found", "unreachable"):
+        if r["status"] in ("not_found", "blocked", "unreachable"):
             print(f"{r['status']:11} line {r['line']} row {r['row']}: {str(r['claim'])[:80]}")
-            for err in r.get("errors", []):
+            for err in r["errors"]:
                 print(f"            {err}")
     print("summary: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
           if counts else "summary: no claim rows with sources")
-    return 1 if counts.get("not_found") or counts.get("unreachable") else 0
+    return 1 if any(counts.get(k) for k in ("not_found", "blocked", "unreachable")) else 0
 
 
 if __name__ == "__main__":

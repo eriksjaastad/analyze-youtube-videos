@@ -3,10 +3,17 @@ name = "analyze-youtube-videos"
 version = "0.1.0"
 description = "Fetch video transcripts and file graded fact-check reports into library/."
 requires-python = ">=3.12"
-dependencies = ["pyyaml==6.0.3"]
+dependencies = [
+    "citecheck",
+    "pypdf[crypto]==7.1.1",
+    "pyyaml==6.0.3",
+]
 
 [project.optional-dependencies]
 whisper = ["faster-whisper==1.2.1"]
 
 [dependency-groups]
 dev = ["pytest==9.0.2"]
+
+[tool.uv.sources]
+citecheck = { git = "https://github.com/eriksjaastad/citecheck", rev = "v0.1.0" }
